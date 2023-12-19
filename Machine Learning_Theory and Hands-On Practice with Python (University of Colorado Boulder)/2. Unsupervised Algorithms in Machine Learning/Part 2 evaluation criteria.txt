@@ -1,0 +1,27 @@
+Evaluate the learner's response for question 1. Does the learner's response include the following?
+- correctly uses the NMF function from the sklearn library
+- The RMSE of the predictions from applying NMF on the sparse matrix or the dense matrix (fills unknown ratings with
+  zeros) is way off. Learner's response shows this.
+
+Evaluate the learner's response for question 2.
+
+Here is a solution:
+
+The NMF gives a poor performance here because the unknown ratings are kept as zeros in the matrix being factorized
+(X in the X=WH). Because we use the Frobenius norm (or similar) loss function, having the source value as zero when the
+actual value might be between 1-5 pushes the gradient and wrongly updates the values in W and H.
+
+It can be fixed if we can mask out the components from the unknown values in X when we calculate the loss function, but
+currently, the sklearn’s NMF does not have a way to change the loss function. You might try making this better by
+imputing unknown ratings to 3 and applying NMF. The RMSE will be better than predicting everything to 3, but the loss
+function still provides less than ideal gradient during optimization. You can also clip the values. In the
+reconstructed matrix, W*H is clipped to 1-5.
+
+Note:
+
+Suppose one wants to use NMF for unsupervised rating prediction for a recommender system; one could use another Python
+library like Surprise. However, using such a library might not be ideal for learning how things work under the hood.
+That’s why we stick with sklearn in this course for learning purposes.
+
+Includes both of the following: mentions that the zero values in X being the ground truth during the optimization is a
+problem and mentions any idea(s) to reduce the error.
