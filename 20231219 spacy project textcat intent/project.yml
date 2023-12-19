@@ -1,0 +1,114 @@
+title: "Textcat Intent Classification (Text Classification)"
+description: "A demo textcat banking intent classifier project. The data comes from the [banking77 intent
+classification dataset](https://huggingface.co/datasets/PolyAI/banking77)."
+# Variables can be referenced across the project.yml using ${vars.var_name}
+vars:
+  name: "spacy_project_textcat_demo"
+  # Supported languages: all except ja, ko, th, vi, and zh, which would require
+  # custom tokeniser settings in config.cfg
+  lang: "en"
+  # Set your GPU ID, -1 is CPU
+  gpu_id: -1
+  version: "0.0.0"
+  train: "banking-train.csv"
+  test: "banking-test.csv"
+  categories: "categories.json"
+  config: "config.cfg"
+
+# These are the directories that the project needs. The project CLI will make
+# sure that they always exist.
+directories: ["assets", "corpus", "configs", "training", "scripts", "packages"]
+
+# Assets that should be downloaded or available in the directory.
+# Can also be shipped with the project so they don't have to be downloaded.
+assets:
+  - dest: "assets/${vars.train}"
+    description: "Training data"
+  - dest: "assets/${vars.test}"
+    description: "Test data"
+  - dest: "assets/${vars.categories}"
+    description: "Categories/Labels"
+
+# Workflows are sequences of commands (see below) executed in order. You can
+# run them via "spacy project run [workflow]". If a commands's inputs/outputs
+# haven't changed, it won't be re-run.
+workflows:
+  all:
+    - split
+    - convert
+    - train
+    - evaluate
+    - package
+
+# Project commands, specified in a style similar to CI config files (e.g. Azure
+# pipelines). The name is the command name that lets you trigger the command
+# via "spacy project run [command] [path]". The help message is optional and
+# shown when executing "spacy project run [optional command] [path] --help".
+commands:
+  - name: "split"
+    help: "Split the training data into a train-dev set"
+    script:
+      - "python scripts/split.py assets/${vars.train} assets/train.csv assets/dev.csv"
+      - "python scripts/split.py assets/${vars.test} assets/test.csv"
+    deps:
+      - "assets/${vars.train}"
+      - "assets/${vars.test}"
+      - "scripts/split.py"
+    outputs:
+      - "corpus/train.csv"
+      - "corpus/dev.csv"
+      - "corpus/test.csv"
+
+  - name: "convert"
+    help: "Convert the data to spaCy's binary format"
+    script:
+      - "python scripts/convert.py assets/train.csv assets/${vars.categories} corpus/train.spacy"
+      - "python scripts/convert.py assets/dev.csv assets/${vars.categories} corpus/dev.spacy"
+      - "python scripts/convert.py assets/test.csv assets/${vars.categories} corpus/test.spacy"
+    deps:
+      - "assets/${vars.train}"
+      - "assets/${vars.test}"
+      - "assets/${vars.categories}"
+      - "scripts/convert.py"
+    outputs:
+      - "corpus/train.spacy"
+      - "corpus/dev.spacy"
+      - "corpus/test.spacy"
+
+  - name: "train"
+    help: "Train the textcat model"
+    script:
+      - "python -m spacy train configs/${vars.config} --output training/ --paths.train corpus/train.spacy --paths.test corpus/test.spacy --nlp.lang ${vars.lang} --gpu-id ${vars.gpu_id}"
+    deps:
+      - "configs/${vars.config}"
+      - "corpus/train.spacy"
+      - "corpus/dev.spacy"
+    outputs:
+      - "training/model-best"
+
+  - name: "evaluate"
+    help: "Evaluate the model and export metrics"
+    script:
+      - "python -m spacy evaluate training/model-best corpus/dev.spacy --output training/metrics.json"
+    deps:
+      - "corpus/dev.spacy"
+      - "training/model-best"
+    outputs:
+      - "training/metrics.json"
+
+  - name: package
+    help: "Package the trained model as a pip package"
+    script:
+      - "python -m spacy package training/model-best packages --name ${vars.name} --version ${vars.version} --force"
+    deps:
+      - "training/model-best"
+    outputs_no_cache:
+      - "packages/${vars.lang}_${vars.name}-${vars.version}/dist/${vars.lang}_${vars.name}-${vars.version}.tar.gz"
+
+  - name: visualize-model
+    help: Visualize the model's output interactively using Streamlit
+    script:
+      - "streamlit run scripts/visualize_model.py training/model-best \"provision Portland K8s cluster\""
+    deps:
+      - "scripts/visualize_model.py"
+      - "training/model-best"

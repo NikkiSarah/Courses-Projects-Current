@@ -1,0 +1,21 @@
+convert:
+  cmd: python -m spacy run convert
+  script:
+    - python scripts/convert.py assets/banking-train.csv assets/categories.json corpus/train.spacy
+    - python scripts/convert.py assets/banking-test.csv assets/categories.json corpus/test.spacy
+  deps:
+    - path: assets/banking-train.csv
+      md5: 9181353ae0c4d7e645fa4ada065be1c4
+    - path: assets/banking-test.csv
+      md5: 50a916a25effa17ba2a8b1828dd2c4f8
+    - path: assets/categories.json
+      md5: 3db0e59f3e0769abc392a44377f0284e
+    - path: scripts/convert.py
+      md5: 79d9ace60f380a295f8860ac23e7f824
+  outs:
+    - path: corpus/train.spacy
+      md5: bbe4da674fbfaf12106a0baf0e382f1b
+    - path: corpus/test.spacy
+      md5: 600ce688bfdc1a01c7f86fd775097183
+  spacy_version: 3.5.3
+  spacy_git_version: '512241e12'

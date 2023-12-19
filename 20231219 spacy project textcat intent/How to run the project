@@ -1,0 +1,16 @@
+Project steps
+
+1. Add the train and test data to the 'assets' folder.
+2. Use the 'convert' script in the scripts folder to pre-process and/or clean the data before reading it into DocBin
+   files that spacy can read whilst training. The output should be train/eval/test files under a new 'corpus' folder.
+   For example, this demo ingests the train and test csv files, splits the training data into a train and dev set, and
+   then outputs 3 files into the 'corpus' folder.
+
+   - python -m spacy project run convert
+3. The config file in the 'configs' folder defines everything about the project, including what type of text
+   categorisation algorithm will be used to train the model. Use the following resources to help guide how to adapt the
+   config file for the current text categorisation use case:
+   - https://spacy.io/usage/training#config
+   - https://spacy.io/api/architectures
+
+3. Train the model: python -m spacy project run train
