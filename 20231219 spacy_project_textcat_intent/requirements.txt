@@ -1,7 +1,0 @@
-spacy-streamlit>=1.0.0a0
-streamlit
-
-numpy~=1.26.2
-pandas~=2.1.4
-typer~=0.4.1
-spacy~=3.5.3

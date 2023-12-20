@@ -1,8 +1,9 @@
 convert:
   cmd: python -m spacy run convert
   script:
-    - python scripts/convert.py assets/banking-train.csv assets/categories.json corpus/train.spacy
-    - python scripts/convert.py assets/banking-test.csv assets/categories.json corpus/test.spacy
+    - python scripts/convert.py assets/train.csv assets/categories.json corpus/train.spacy
+    - python scripts/convert.py assets/dev.csv assets/categories.json corpus/dev.spacy
+    - python scripts/convert.py assets/test.csv assets/categories.json corpus/test.spacy
   deps:
     - path: assets/banking-train.csv
       md5: 9181353ae0c4d7e645fa4ada065be1c4
@@ -11,11 +12,51 @@ convert:
     - path: assets/categories.json
       md5: 3db0e59f3e0769abc392a44377f0284e
     - path: scripts/convert.py
-      md5: 79d9ace60f380a295f8860ac23e7f824
+      md5: fcca1c98c44e01db77f702253713337a
   outs:
     - path: corpus/train.spacy
-      md5: bbe4da674fbfaf12106a0baf0e382f1b
+      md5: 69d11af00df2329291711c3f0b18e165
+    - path: corpus/dev.spacy
+      md5: f928cf1813fb3e6494e6544967363301
     - path: corpus/test.spacy
       md5: 600ce688bfdc1a01c7f86fd775097183
+  spacy_version: 3.5.3
+  spacy_git_version: '512241e12'
+split:
+  cmd: python -m spacy run split
+  script:
+    - python scripts/split.py assets/banking-train.csv assets/train.csv assets/dev.csv
+    - python scripts/split.py assets/banking-test.csv assets/test.csv None
+  deps:
+    - path: assets/banking-train.csv
+      md5: 9181353ae0c4d7e645fa4ada065be1c4
+    - path: assets/banking-test.csv
+      md5: 50a916a25effa17ba2a8b1828dd2c4f8
+    - path: scripts/split.py
+      md5: 3cd49e139d172eaab92d26cc85ea24be
+  outs:
+    - path: corpus/train.csv
+      md5: null
+    - path: corpus/dev.csv
+      md5: null
+    - path: corpus/test.csv
+      md5: null
+  spacy_version: 3.5.3
+  spacy_git_version: '512241e12'
+train:
+  cmd: python -m spacy run train
+  script:
+    - python -m spacy train configs/config.cfg --output training/ --paths.train corpus/train.spacy
+      --paths.dev corpus/dev.spacy --nlp.lang en --gpu-id -1
+  deps:
+    - path: configs/config.cfg
+      md5: b8628f172b60c3afa95f5e5b1bff0b70
+    - path: corpus/train.spacy
+      md5: 69d11af00df2329291711c3f0b18e165
+    - path: corpus/dev.spacy
+      md5: f928cf1813fb3e6494e6544967363301
+  outs:
+    - path: training/model-best
+      md5: 32d7f1995553dd7023b9c417320d1196
   spacy_version: 3.5.3
   spacy_git_version: '512241e12'
