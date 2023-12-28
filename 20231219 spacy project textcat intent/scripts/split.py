@@ -7,7 +7,7 @@ import random
 import typer
 
 
-def split(input_path: Path, output_path: Path, dev_output_path: Path):
+def split(input_path: Path, output_path: Path, dev_output_path: Path = None):
     if "-train" in input_path.name:
         data = list()
         with open(input_path, 'r') as f:

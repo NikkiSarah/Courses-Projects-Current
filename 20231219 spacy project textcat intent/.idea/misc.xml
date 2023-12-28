@@ -3,5 +3,5 @@
   <component name="Black">
     <option name="sdkName" value="spacy-env" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="spacy-env" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="pytorch-nlp" project-jdk-type="Python SDK" />
 </project>
