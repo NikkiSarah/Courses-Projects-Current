@@ -49,7 +49,7 @@ commands:
     help: "Split the training data into a train-dev set"
     script:
       - "python scripts/split.py assets/${vars.train} assets/train.csv assets/dev.csv"
-      - "python scripts/split.py assets/${vars.test} assets/test.csv"
+      - "python scripts/split.py assets/${vars.test} assets/test.csv None"
     deps:
       - "assets/${vars.train}"
       - "assets/${vars.test}"
@@ -78,7 +78,7 @@ commands:
   - name: "train"
     help: "Train the textcat model"
     script:
-      - "python -m spacy train configs/${vars.config} --output training/ --paths.train corpus/train.spacy --paths.test corpus/test.spacy --nlp.lang ${vars.lang} --gpu-id ${vars.gpu_id}"
+      - "python -m spacy train configs/${vars.config} --output training/ --paths.train corpus/train.spacy --paths.dev corpus/dev.spacy --nlp.lang ${vars.lang} --gpu-id ${vars.gpu_id}"
     deps:
       - "configs/${vars.config}"
       - "corpus/train.spacy"

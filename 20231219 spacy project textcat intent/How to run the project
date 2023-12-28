@@ -1,16 +1,21 @@
 Project steps
 
-1. Add the train and test data to the 'assets' folder.
-2. Use the 'convert' script in the scripts folder to pre-process and/or clean the data before reading it into DocBin
-   files that spacy can read whilst training. The output should be train/eval/test files under a new 'corpus' folder.
-   For example, this demo ingests the train and test csv files, splits the training data into a train and dev set, and
-   then outputs 3 files into the 'corpus' folder.
+1. Add the data to the 'assets' folder.
 
-   - python -m spacy project run convert
-3. The config file in the 'configs' folder defines everything about the project, including what type of text
-   categorisation algorithm will be used to train the model. Use the following resources to help guide how to adapt the
-   config file for the current text categorisation use case:
-   - https://spacy.io/usage/training#config
-   - https://spacy.io/api/architectures
-
-3. Train the model: python -m spacy project run train
+If you wish to run the project script by script:
+    The terminal commands are typically: python -m spacy project run 'script name' (without the quotation marks)
+    1. Use the 'split' script to split the training data into a train and dev set. These will appear in the assets
+       folder.
+    2. Use the 'convert' script to read the data into DocBin files that spacy uses during model training. The output
+       should be 3 spacy files in the 'corpus' folder.
+    3. The config file defines everything about the training pipeline, including the type of algorithm that will be
+       applied to the data. Use the following resources to help guide how to adapt the config file for the current text
+       categorisation use case:
+       - https://spacy.io/usage/training
+       - https://spacy.io/usage/training#config
+       - https://spacy.io/api/architectures
+    4. Train the model
+       Delete or rename files in the training folder to re-train the model; for example, if the config file is
+       changed.
+    5. Evaluate the model
+       python -m spacy evaluate [model e.g. training/model-best] [corpus e.g. corpus/test.spacy]
