@@ -153,7 +153,7 @@ def objective(trial):
     return mse
 
 
-study = optuna.create_study(storage="sqlite:///db.sqlite3", study_name="Ch5_housing2", direction="minimize")
+study = optuna.create_study(storage="sqlite:///db.sqlite3", study_name="Ch5_housing", direction="minimize")
 study.optimize(objective, n_trials=30, n_jobs=n_cpu-2, show_progress_bar=True)
 
 print("Best trial:", study.best_trial.number)
