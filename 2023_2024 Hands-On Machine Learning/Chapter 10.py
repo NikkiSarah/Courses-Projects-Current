@@ -19,19 +19,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # # check the backend and change if required
-# import matplotlib as mpl
+import matplotlib as mpl
 
-# mpl_backend = mpl.get_backend()
-# if mpl_backend != "Qt5Agg":
-#     mpl.use("Qt5Agg")
-# else:
-#     pass
+mpl_backend = mpl.get_backend()
+if mpl_backend != "Qt5Agg":
+    mpl.use("Qt5Agg")
+else:
+    pass
 
 print(tf.__version__)
 
 # %% building an image classifier using the sequential API
-import ssl
-ssl._create_default_https_context = ssl._create_unverified_context
+# import ssl
+# ssl._create_default_https_context = ssl._create_unverified_context
 
 fashion_mnist = tf.keras.datasets.fashion_mnist
 (X_train_val, y_train_val), (X_test, y_test) = fashion_mnist.load_data()
@@ -291,15 +291,24 @@ rnd_search_cv.best_score_
 model = rnd_search_cv.best_estimator_.model
 
 # %% train a deep MLP
+# import ssl
 from sklearn.metrics import accuracy_score, precision_score
-from tensorflow.keras.optimizers.schedules import LearningRateSchedule
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.metrics import Precision
+from tensorflow.keras.callbacks import LearningRateScheduler
+from tensorflow.keras.optimizers import SGD
+from tensorflow.keras.backend import clear_session
 
-ssl._create_default_https_context = ssl._create_unverified_context
+# ssl._create_default_https_context = ssl._create_unverified_context
 fashion_mnist = tf.keras.datasets.fashion_mnist
 (X_train_val, y_train_val), (X_test, y_test) = fashion_mnist.load_data()
 
-X_val, X_train = X_train_val[:5000] / 255.0, X_train_val[5000:] / 255.0
+X_train_val = X_train_val.reshape((60000, 28, 28, 1)) / 255.0
+X_val, X_train = X_train_val[:5000], X_train_val[5000:]
 y_val, y_train = y_train_val[:5000], y_train_val[5000:]
+
+y_train_ohe = to_categorical(y_train)
+y_val_ohe = to_categorical(y_val)
 
 model = Sequential([
     Flatten(input_shape=[28, 28]),
@@ -307,55 +316,15 @@ model = Sequential([
     Dense(100, activation='relu'),
     Dense(10, activation='softmax')
 ])
-model.compile(loss='sparse_categorical_crossentropy', optimizer='sgd',
-              metrics=['accuracy'])
+model.compile(optimizer='SGD', loss='categorical_crossentropy',
+              metrics=['accuracy', Precision()])
 
 run_logdir = get_run_logdir()
 tensorboard_cb = TensorBoard(run_logdir)
-history = model.fit(X_train, y_train, epochs=10, validation_data=(X_val, y_val),
-                    callbacks=[tensorboard_cb])
-y_pred = np.argmax(model.predict(X_val), axis=1)
-val_accuracy = accuracy_score(y_val, y_pred)
-print(val_accuracy)
-
-val_precision = precision_score(y_val, y_pred, average='micro')
-print(val_precision)
-
-# determine the optimal learning rate
-https://towardsdatascience.com/learning-rate-schedules-and-adaptive-learning-rate-methods-for-deep-learning-2c8f433990d1
-def step_increase(epoch):
-    initial_lr = 1e-4
-    final_lr = 10
-    learning_rate = 
-    
-    
-    
-    def step_decay(epoch):
-   initial_lrate = 0.1
-   drop = 0.5
-   epochs_drop = 10.0
-   lrate = initial_lrate * math.pow(drop,  
-           math.floor((1+epoch)/epochs_drop))
-   return lratelrate = LearningRateScheduler(step_decay)
-
-
-num_epochs=500
-initial_lr=1e-4
-final_lr=10
-for i in range(num_epochs):
-    if i == 0:
-        learning_rate = initial_lr
-    else:
-        increase_rate = (final_lr - learning_rate) / (num_epochs - i)
-        learning_rate = learning_rate * (1 + increase_rate)
-    print(i, num_epochs-i, learning_rate)
-
-
-
-
 early_stopping_cb = EarlyStopping(patience=10, restore_best_weights=True)
-history = model.fit(X_train, y_train, epochs=100, validation_data=(X_val, y_val),
-                    callbacks=[early_stopping_cb])
+history = model.fit(X_train, y_train_ohe, epochs=100, validation_data=(X_val, y_val_ohe),
+                    callbacks=[tensorboard_cb, early_stopping_cb])
+
 y_pred = np.argmax(model.predict(X_val), axis=1)
 val_accuracy = accuracy_score(y_val, y_pred)
 print(val_accuracy)
@@ -364,10 +333,64 @@ val_precision = precision_score(y_val, y_pred, average='micro')
 print(val_precision)
 
 
+# determine the optimal learning rate using an exponential increase
+model = Sequential([
+    Flatten(input_shape=[28, 28]),
+    Dense(300, activation='relu'),
+    Dense(100, activation='relu'),
+    Dense(10, activation='softmax')
+])
 
-# use hyperparameter tuning to increase precision
-# learning rate
-# optimiser then learning rate again
-# number of layers, number of neurons per layer, activtion functions
-# batch size
+clear_session()
 
+def step_decay(epoch, lr):
+    if epoch < 1:
+        new_lr = lr
+        print(new_lr)
+        return lr
+    else:
+        new_lr = lr * tf.math.exp(1.005)
+        print(new_lr)
+        return new_lr
+
+
+lr_schedule_cb = LearningRateScheduler(step_decay)
+model.compile(optimizer=SGD(1e-5), loss='categorical_crossentropy', metrics=['accuracy', Precision()])
+
+run_logdir = get_run_logdir()
+tensorboard_cb = TensorBoard(run_logdir)
+early_stopping_cb = EarlyStopping(patience=5, restore_best_weights=True)
+model_checkpoint_cb = ModelCheckpoint('./outputs/best_tf_model.keras', save_best_only=True)
+history = model.fit(X_train, y_train_ohe, epochs=30, validation_data=(X_val, y_val_ohe),
+                    callbacks=[tensorboard_cb, lr_schedule_cb, early_stopping_cb, model_checkpoint_cb])
+
+best_model = load_model('./outputs/best_tf_model.keras')
+optimiser = best_model.optimizer
+best_learning_rate = optimiser.learning_rate.numpy()
+print(best_learning_rate)
+
+model = Sequential([
+    Flatten(input_shape=[28, 28]),
+    Dense(300, activation='relu'),
+    Dense(100, activation='relu'),
+    Dense(10, activation='softmax')
+])
+
+clear_session()
+model.compile(optimizer=SGD(learning_rate=best_learning_rate), loss='categorical_crossentropy',
+              metrics=['accuracy', Precision()])
+
+run_logdir = get_run_logdir()
+tensorboard_cb = TensorBoard(run_logdir)
+early_stopping_cb = EarlyStopping(patience=10, restore_best_weights=True)
+model_checkpoint_cb = ModelCheckpoint('./outputs/final_tf_model.keras', save_best_only=True)
+history = model.fit(X_train, y_train_ohe, epochs=30, validation_data=(X_val, y_val_ohe),
+                    callbacks=[tensorboard_cb, early_stopping_cb, model_checkpoint_cb])
+
+final_model = load_model('./outputs/final_tf_model.keras')
+y_pred = np.argmax(final_model.predict(X_test), axis=1)
+test_accuracy = accuracy_score(y_test, y_pred)
+print(test_accuracy)
+
+test_precision = precision_score(y_test, y_pred, average='micro')
+print(test_precision)
