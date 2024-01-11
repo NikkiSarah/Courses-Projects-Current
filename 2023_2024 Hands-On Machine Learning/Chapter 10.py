@@ -1,6 +1,4 @@
-# the perceptron
-import os
-
+# %% the perceptron
 from sklearn.datasets import load_iris
 from sklearn.linear_model import Perceptron
 
@@ -12,7 +10,7 @@ clf = Perceptron()
 clf.fit(X, y)
 y_pred = clf.predict([[2, 0.5]])
 
-# installing tensorflow
+# %% installing tensorflow
 import tensorflow as tf
 from tensorflow.keras.layers import Flatten, Dense
 from tensorflow.keras.models import Sequential
@@ -20,20 +18,20 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-# check the backend and change if required
-import matplotlib as mpl
+# # check the backend and change if required
+# import matplotlib as mpl
 
-mpl_backend = mpl.get_backend()
-if mpl_backend != "Qt5Agg":
-    mpl.use("Qt5Agg")
-else:
-    pass
+# mpl_backend = mpl.get_backend()
+# if mpl_backend != "Qt5Agg":
+#     mpl.use("Qt5Agg")
+# else:
+#     pass
 
 print(tf.__version__)
 
-# building an image classifier using the sequential API
-# import ssl
-# ssl._create_default_https_context = ssl._create_unverified_context
+# %% building an image classifier using the sequential API
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
 
 fashion_mnist = tf.keras.datasets.fashion_mnist
 (X_train_val, y_train_val), (X_test, y_test) = fashion_mnist.load_data()
@@ -42,7 +40,8 @@ print(X_train_val.dtype)
 
 X_val, X_train = X_train_val[:5000] / 255.0, X_train_val[5000:] / 255.0
 y_val, y_train = y_train_val[:5000], y_train_val[5000:]
-class_names = ['T-shirt/Top', 'Trousers', 'Sweater', 'Dress', 'Coat', 'Sandal', 'Shirt', 'Sneakers', 'Bag', 'Boot']
+class_names = ['T-shirt/Top', 'Trousers', 'Sweater', 'Dress', 'Coat', 'Sandal', 'Shirt',
+               'Sneakers', 'Bag', 'Boot']
 print(class_names[y_train[0]])
 
 model = Sequential()
@@ -70,7 +69,8 @@ print(weights.shape)
 print(biases)
 print(biases.shape)
 
-model.compile(loss='sparse_categorical_crossentropy', optimizer='sgd', metrics=['accuracy'])
+model.compile(loss='sparse_categorical_crossentropy', optimizer='sgd',
+              metrics=['accuracy'])
 history = model.fit(X_train, y_train, epochs=30, validation_data=(X_val, y_val))
 
 pd.DataFrame(history.history).plot()
@@ -88,7 +88,7 @@ print(np.array(class_names)[y_pred])
 y_new = y_test[:3]
 print(y_new)
 
-# building a regression MLP using the functional API
+# %% building a regression MLP using the functional API
 from sklearn.datasets import fetch_california_housing
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -126,7 +126,8 @@ X_val_A, X_val_B = X_val[:, :5], X_val[:, 2:]
 X_test_A, X_test_B = X_test[:, :5], X_test[:, 2:]
 X_new_A, X_new_B = X_test_A[:3], X_test_B[:3]
 
-history = model.fit((X_train_A, X_train_B), y_train, epochs=20, validation_data=((X_val_A, X_val_B), y_val))
+history = model.fit((X_train_A, X_train_B), y_train, epochs=20,
+                    validation_data=((X_val_A, X_val_B), y_val))
 mse_test = model.evaluate((X_test_A, X_test_B), y_test)
 y_pred = model.predict((X_new_A, X_new_B))
 
@@ -141,7 +142,7 @@ total_loss, main_loss, aux_loss = model.evaluate([X_test_A, X_test_B], [y_test, 
 y_pred_main, y_pred_aux = model.predict([X_new_A, X_new_B])
 
 
-# using the subclassing API to build dynamic models
+# %% using the subclassing API to build dynamic models
 class WideAndDeepModel(Model):
     def __init__(self, units=30, activation='relu', **kwargs):
         super().__init__(**kwargs)
@@ -162,7 +163,7 @@ class WideAndDeepModel(Model):
 
 model = WideAndDeepModel()
 
-# saving and restoring a model
+# %% saving and restoring a model
 from tensorflow.keras.models import load_model
 
 (X_train_val, y_train_val), (X_test, y_test) = fashion_mnist.load_data()
@@ -175,20 +176,22 @@ model = Sequential([
     Dense(100, activation='relu'),
     Dense(10, activation='softmax')
 ])
-model.compile(loss='sparse_categorical_crossentropy', optimizer='sgd', metrics=['accuracy'])
+model.compile(loss='sparse_categorical_crossentropy', optimizer='sgd',
+              metrics=['accuracy'])
 history = model.fit(X_train, y_train, epochs=30, validation_data=(X_val, y_val))
 
 model.save('./outputs/my_tf_model.keras')
 model = load_model('./outputs/my_tf_model.keras')
 
-# using callbacks
+# %% using callbacks
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, Callback
 
 checkpoint_cb = ModelCheckpoint('./outputs/my_tf_model.keras')
 history = model.fit(X_train, y_train, epochs=10, callbacks=[checkpoint_cb])
 
 checkpoint_cb = ModelCheckpoint('./outputs/my_tf_model.keras', save_best_only=True)
-history = model.fit(X_train, y_train, epochs=10, validation_data=(X_val, y_val), callbacks=[checkpoint_cb])
+history = model.fit(X_train, y_train, epochs=10, validation_data=(X_val, y_val),
+                    callbacks=[checkpoint_cb])
 model = tf.keras.models.load_model('./outputs/my_tf_model.keras')
 
 early_stopping_cb = EarlyStopping(patience=10, restore_best_weights=True)
@@ -202,7 +205,8 @@ class PrintValTrainRatioCallback(Callback):
         print("\nval/train: {:.2f}".format(logs["val_loss"] / logs["loss"]))
 
 
-# using tensorboard for visualisation
+# %% using tensorboard for visualisation
+import os
 from tensorflow.keras.callbacks import TensorBoard
 from tensorflow.summary import create_file_writer
 
@@ -218,7 +222,8 @@ def get_run_logdir():
 
 run_logdir = get_run_logdir()
 tensorboard_cb = TensorBoard(run_logdir)
-history = model.fit(X_train, y_train, epochs=30, validation_data=(X_val, y_val), callbacks=[tensorboard_cb])
+history = model.fit(X_train, y_train, epochs=30, validation_data=(X_val, y_val),
+                    callbacks=[tensorboard_cb])
 
 
 test_logdir = get_run_logdir()
@@ -236,11 +241,20 @@ with writer.as_default():
         audio = tf.reshape(tf.cast(sine_wave, tf.float32), [1, -1, 1])
         tf.summary.audio("my_audio", audio, sample_rate=48000, step=step)
 
-# fine-tuning neural network hyperparameters
+# %% fine-tuning neural network hyperparameters
 from tensorflow.keras.layers import InputLayer
 from scikeras.wrappers import KerasRegressor
 from scipy.stats import reciprocal
 from sklearn.model_selection import RandomizedSearchCV
+
+housing = fetch_california_housing()
+X_train_val, X_test, y_train_val, y_test = train_test_split(housing.data, housing.target)
+X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val)
+
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_val = scaler.transform(X_val)
+X_test = scaler.transform(X_test)
 
 
 def build_model(n_hidden=1, n_neurons=30, learning_rate=3e-3, input_shape=[8]):
@@ -255,7 +269,8 @@ def build_model(n_hidden=1, n_neurons=30, learning_rate=3e-3, input_shape=[8]):
 
 
 tf_reg = KerasRegressor(build_model, n_hidden=3)
-tf_reg.fit(X_train, y_train, epochs=100, validation_data=(X_val, y_val), callbacks=[EarlyStopping(patience=10)])
+tf_reg.fit(X_train, y_train, epochs=100, validation_data=(X_val, y_val),
+           callbacks=[EarlyStopping(patience=10)])
 mse_test = tf_reg.score(X_test, y_test)
 
 X_new = X_test[:3]
@@ -270,3 +285,89 @@ param_distribs = {
 tf_reg = KerasRegressor(build_fn=build_model)
 rnd_search_cv = RandomizedSearchCV(tf_reg, param_distribs, n_iter=10, cv=3)
 rnd_search_cv.fit(X_train, y_train)
+rnd_search_cv.best_params_
+rnd_search_cv.best_score_
+
+model = rnd_search_cv.best_estimator_.model
+
+# %% train a deep MLP
+from sklearn.metrics import accuracy_score, precision_score
+from tensorflow.keras.optimizers.schedules import LearningRateSchedule
+
+ssl._create_default_https_context = ssl._create_unverified_context
+fashion_mnist = tf.keras.datasets.fashion_mnist
+(X_train_val, y_train_val), (X_test, y_test) = fashion_mnist.load_data()
+
+X_val, X_train = X_train_val[:5000] / 255.0, X_train_val[5000:] / 255.0
+y_val, y_train = y_train_val[:5000], y_train_val[5000:]
+
+model = Sequential([
+    Flatten(input_shape=[28, 28]),
+    Dense(300, activation='relu'),
+    Dense(100, activation='relu'),
+    Dense(10, activation='softmax')
+])
+model.compile(loss='sparse_categorical_crossentropy', optimizer='sgd',
+              metrics=['accuracy'])
+
+run_logdir = get_run_logdir()
+tensorboard_cb = TensorBoard(run_logdir)
+history = model.fit(X_train, y_train, epochs=10, validation_data=(X_val, y_val),
+                    callbacks=[tensorboard_cb])
+y_pred = np.argmax(model.predict(X_val), axis=1)
+val_accuracy = accuracy_score(y_val, y_pred)
+print(val_accuracy)
+
+val_precision = precision_score(y_val, y_pred, average='micro')
+print(val_precision)
+
+# determine the optimal learning rate
+https://towardsdatascience.com/learning-rate-schedules-and-adaptive-learning-rate-methods-for-deep-learning-2c8f433990d1
+def step_increase(epoch):
+    initial_lr = 1e-4
+    final_lr = 10
+    learning_rate = 
+    
+    
+    
+    def step_decay(epoch):
+   initial_lrate = 0.1
+   drop = 0.5
+   epochs_drop = 10.0
+   lrate = initial_lrate * math.pow(drop,  
+           math.floor((1+epoch)/epochs_drop))
+   return lratelrate = LearningRateScheduler(step_decay)
+
+
+num_epochs=500
+initial_lr=1e-4
+final_lr=10
+for i in range(num_epochs):
+    if i == 0:
+        learning_rate = initial_lr
+    else:
+        increase_rate = (final_lr - learning_rate) / (num_epochs - i)
+        learning_rate = learning_rate * (1 + increase_rate)
+    print(i, num_epochs-i, learning_rate)
+
+
+
+
+early_stopping_cb = EarlyStopping(patience=10, restore_best_weights=True)
+history = model.fit(X_train, y_train, epochs=100, validation_data=(X_val, y_val),
+                    callbacks=[early_stopping_cb])
+y_pred = np.argmax(model.predict(X_val), axis=1)
+val_accuracy = accuracy_score(y_val, y_pred)
+print(val_accuracy)
+
+val_precision = precision_score(y_val, y_pred, average='micro')
+print(val_precision)
+
+
+
+# use hyperparameter tuning to increase precision
+# learning rate
+# optimiser then learning rate again
+# number of layers, number of neurons per layer, activtion functions
+# batch size
+
