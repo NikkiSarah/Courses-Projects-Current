@@ -250,8 +250,7 @@ for lr in learning_rates:
         earlystopping_cb = tfk.callbacks.EarlyStopping(patience=10)
         model_cb = tfk.callbacks.ModelCheckpoint("./outputs/cifar10_model_decay.keras",
                                                   save_best_only=True)
-        callback_list = [tensorboard_cb, model_cb, earlystopping_cb]
-        
+        callback_list = [tensorboard_cb, model_cb, earlystopping_cb]    
     else:
         print("Training a model with learning rate", str(lr))
         num_epochs = 100
@@ -280,7 +279,8 @@ for lr in learning_rates:
 
     print("Run time: ", run_time)
     
-# the best model had a learning rate of 9e-5 and took 2.9 minutes to run
+# the best model had a learning rate of 9e-5, took 2.9 minutes to run and was stopped at
+# 25 epochs
 base_perf_all = base_perf[:-1]
 base_perf_df = pd.DataFrame(base_perf_all, columns=["model", "learning_rate", "val_loss",
                                                     "val_accuracy", "run_time"])
@@ -289,13 +289,15 @@ base_perf_df2.to_csv("./outputs/base_perf.csv", index=False)
 
 
 # add batch normalisation and compare the learning curves
-learning_rates = [1e-3, 9e-4, 7e-4, 5e-4, 3e-4, 1e-4, 9e-5, 7e-5, 5e-5, 3e-5, 1e-5, -1]
+learning_rates = [1e-3, 9e-4, 7e-4, 5e-4, 3e-4, 1e-4, 9e-5, 7e-5, 5e-5, 3e-5,
+                  1e-5, -1]
 
 bn_perf = []
 for lr in learning_rates:
     tfk.backend.clear_session()
     model = tfk.models.Sequential()
     model.add(tfk.layers.Flatten(input_shape=[32, 32, 3]))
+    model.add(tfk.layers.BatchNormalization())
     for _ in range(20):
         model.add(tfk.layers.Dense(100, kernel_initializer='he_normal'))
         model.add(tfk.layers.BatchNormalization())
@@ -319,17 +321,18 @@ for lr in learning_rates:
         
         run_logdir = get_run_logdir("-bn", "-exp_decay")
         tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
+        earlystopping_cb = tfk.callbacks.EarlyStopping(patience=10)
         model_cb = tfk.callbacks.ModelCheckpoint("./outputs/bn_cifar10_model_decay.keras",
                                                   save_best_only=True)        
-        callback_list = [tensorboard_cb, model_cb]
-
+        callback_list = [tensorboard_cb, model_cb, earlystopping_cb]
     else:
         print("Training a model with learning rate", str(lr))
+        num_epochs = 100
         optimiser = tfk.optimizers.experimental.Nadam(learning_rate=lr)
         
         run_logdir = get_run_logdir("-bn", "-" + str(lr))
         tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
-
+        earlystopping_cb = tfk.callbacks.EarlyStopping(patience=10)
         # model_cb = tfk.callbacks.ModelCheckpoint("./outputs/bn_cifar10_model.keras",
         #                                          save_best_only=True)
         earlystopping_cb = tfk.callbacks.EarlyStopping(patience=10)
@@ -347,20 +350,24 @@ for lr in learning_rates:
     model_eval = model.evaluate(X_val_scaled, y_val)
     print(model_eval)
     run_time = time.time() - t0
-    bn_perf.append((model, lr, model_eval, run_time))
+    bn_perf.append((model, lr, model_eval[0], model_eval[1], run_time))
 
     print("Run time: ", run_time)
     
-base_perf_all = base_perf[:-1]
-base_perf_df = pd.DataFrame(base_perf_all, columns=["model", "learning_rate", "val_loss",
-                                                    "val_accuracy", "run_time"])
-base_perf_df2 = base_perf_df.iloc[:, 1:]
-base_perf_df2.to_csv("./outputs/base_perf.csv", index=False)
+# the best model had a learning rate of 1e-3 (much larger), but took 5.5 minutes to run
+# and was stopped at 28 epochs
+bn_perf_df = pd.DataFrame(bn_perf, columns=["model", "learning_rate", "val_loss",
+                                                "val_accuracy", "run_time"])
+bn_perf_df2 = bn_perf_df.iloc[:, 1:]
+bn_perf_df2.to_csv("./outputs/bn_perf.csv", index=False)
+
 
 # replace batch normalisation with selu and make the necessary adjustments to ensure the
 # DNN self-normalises (e.g. standardise input features, use LeCun normal initialisation,
 # use only a sequence of dense layers)
-learning_rates = [1e-3, 9e-4, 7e-4, 5e-4, 3e-4, 1e-4, 9e-5, 7e-5, 5e-5, 3e-5, 1e-5, -1]
+learning_rates = [3e-3, 1e-3, 9e-4, 7e-4, 5e-4, 3e-4, 1e-4, 9e-5, 7e-5, 5e-5, 3e-5, 1e-5,
+                  -1]
+learning_rates = [3e-3, 1e-4, 9e-5, 7e-5, 5e-5, 3e-5, 1e-5, -1]
 
 selu_perf = []
 for lr in learning_rates:
