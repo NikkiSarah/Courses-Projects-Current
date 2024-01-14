@@ -60,7 +60,7 @@ model = tfk.models.Sequential([
     tfk.layers.Dense(10, activation='softmax')
 ])
 
-print(model.summary())
+model.summary()
 model.layers
 hidden1 = model.layers[1]
 print(hidden1.name)
@@ -199,16 +199,16 @@ model.save('./outputs/my_tf_model.keras')
 model = tfk.saving.load_model('./outputs/my_tf_model.keras')
 
 # using callbacks
-checkpoint_cb = tfk.callback.ModelCheckpoint('./outputs/my_tf_model.keras')
+checkpoint_cb = tfk.callbacks.ModelCheckpoint('./outputs/my_tf_model.keras')
 history = model.fit(X_train, y_train, epochs=10, callbacks=[checkpoint_cb])
 
-checkpoint_cb = tfk.callback.ModelCheckpoint('./outputs/my_tf_model.keras',
+checkpoint_cb = tfk.callbacks.ModelCheckpoint('./outputs/my_tf_model.keras',
                                           save_best_only=True)
 history = model.fit(X_train, y_train, epochs=10, validation_data=(X_val, y_val),
                     callbacks=[checkpoint_cb])
 model = tfk.saving.load_model('./outputs/my_tf_model.keras')
 
-early_stopping_cb = tfk.callback.EarlyStopping(patience=10, restore_best_weights=True)
+early_stopping_cb = tfk.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
 history = model.fit(X_train, y_train, epochs=100, validation_data=(X_val, y_val),
                     callbacks=[checkpoint_cb, early_stopping_cb])
 model = tfk.saving.load_model('./outputs/my_tf_model.keras')
@@ -234,7 +234,7 @@ def get_run_logdir():
 
 
 run_logdir = get_run_logdir()
-tensorboard_cb = tfk.callback.TensorBoard(run_logdir)
+tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
 history = model.fit(X_train, y_train, epochs=30, validation_data=(X_val, y_val),
                     callbacks=[tensorboard_cb])
 
@@ -282,7 +282,7 @@ def build_model(n_hidden=1, n_neurons=30, learning_rate=3e-3, input_shape=[8]):
 
 tf_reg = KerasRegressor(build_model, n_hidden=3)
 tf_reg.fit(X_train, y_train, epochs=100, validation_data=(X_val, y_val),
-           callbacks=[tfk.callback.EarlyStopping(patience=10)])
+           callbacks=[tfk.callbacks.EarlyStopping(patience=10)])
 mse_test = tf_reg.score(X_test, y_test)
 
 X_new = X_test[:3]
@@ -328,8 +328,8 @@ model.compile(optimizer='SGD', loss='categorical_crossentropy',
               metrics=['accuracy', tfk.metrics.Precision()])
 
 run_logdir = get_run_logdir()
-tensorboard_cb = tfk.callback.TensorBoard(run_logdir)
-early_stopping_cb = tfk.callback.EarlyStopping(patience=10, restore_best_weights=True)
+tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
+early_stopping_cb = tfk.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
 history = model.fit(X_train, y_train_ohe, epochs=100, validation_data=(X_val, y_val_ohe),
                     callbacks=[tensorboard_cb, early_stopping_cb])
 
@@ -367,9 +367,9 @@ model.compile(optimizer=tfk.optimizers.SGD(1e-5), loss='categorical_crossentropy
               metrics=['accuracy', tfk.metrics.Precision()])
 
 run_logdir = get_run_logdir()
-tensorboard_cb = tfk.callback.TensorBoard(run_logdir)
-early_stopping_cb = tfk.callback.EarlyStopping(patience=5, restore_best_weights=True)
-model_checkpoint_cb = tfk.callback.ModelCheckpoint('./outputs/best_tf_model.keras',
+tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
+early_stopping_cb = tfk.callbacks.EarlyStopping(patience=5, restore_best_weights=True)
+model_checkpoint_cb = tfk.callbacks.ModelCheckpoint('./outputs/best_tf_model.keras',
                                                 save_best_only=True)
 history = model.fit(X_train, y_train_ohe, epochs=30, validation_data=(X_val, y_val_ohe),
                     callbacks=[tensorboard_cb, lr_schedule_cb, early_stopping_cb,
@@ -393,9 +393,9 @@ model.compile(optimizer=tfk.optimizers.SGD(learning_rate=best_learning_rate),
               metrics=['accuracy', tfk.metrics.Precision()])
 
 run_logdir = get_run_logdir()
-tensorboard_cb = tfk.callback.TensorBoard(run_logdir)
-early_stopping_cb = tfk.callback.EarlyStopping(patience=10, restore_best_weights=True)
-model_checkpoint_cb = tfk.callback.ModelCheckpoint('./outputs/final_tf_model.keras',
+tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
+early_stopping_cb = tfk.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
+model_checkpoint_cb = tfk.callbacks.ModelCheckpoint('./outputs/final_tf_model.keras',
                                                 save_best_only=True)
 history = model.fit(X_train, y_train_ohe, epochs=30, validation_data=(X_val, y_val_ohe),
                     callbacks=[tensorboard_cb, early_stopping_cb, model_checkpoint_cb])
