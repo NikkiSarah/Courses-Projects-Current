@@ -219,7 +219,8 @@ def get_run_logdir(iteration="", learning_rate=""):
 
 # build a DNN with 20 hidden layers of 100 neurons each using he initialisation and the
 # elu activation function
-learning_rates = [1e-3, 9e-4, 7e-4, 5e-4, 3e-4, 1e-4, 9e-5, 7e-5, 5e-5, 3e-5, 1e-5, -1]
+# 1e-3, 9e-4, 7e-4
+learning_rates = [5e-4, 3e-4, 1e-4, 9e-5, 7e-5, 5e-5, 3e-5, 1e-5, -1]
 
 base_perf = []
 for lr in learning_rates:
@@ -253,7 +254,7 @@ for lr in learning_rates:
         callback_list = [tensorboard_cb, model_cb, earlystopping_cb]    
     else:
         print("Training a model with learning rate", str(lr))
-        num_epochs = 100
+        num_epochs = 50
         optimiser = tfk.optimizers.experimental.Nadam(learning_rate=lr)
         
         run_logdir = get_run_logdir("-base", "-" + str(lr))
@@ -280,7 +281,7 @@ for lr in learning_rates:
     print("Run time: ", run_time)
     
 # the best model had a learning rate of 9e-5, took 2.9 minutes to run and was stopped at
-# 25 epochs
+# 25 epochs. Validation accuracy was 0.4893.
 base_perf_all = base_perf[:-1]
 base_perf_df = pd.DataFrame(base_perf_all, columns=["model", "learning_rate", "val_loss",
                                                     "val_accuracy", "run_time"])
@@ -289,8 +290,7 @@ base_perf_df2.to_csv("./outputs/base_perf.csv", index=False)
 
 
 # add batch normalisation and compare the learning curves
-learning_rates = [1e-3, 9e-4, 7e-4, 5e-4, 3e-4, 1e-4, 9e-5, 7e-5, 5e-5, 3e-5,
-                  1e-5, -1]
+learning_rates = [3e-3, 1e-3, 9e-4, 7e-4, 5e-4, 3e-4, 1e-4, -1]
 
 bn_perf = []
 for lr in learning_rates:
@@ -305,7 +305,6 @@ for lr in learning_rates:
     model.add(tfk.layers.Dense(10, activation='softmax'))
     # model.summary()
 
-    # train the model using nadam optimisation and early stopping
     if lr < 0:
         print("Training a model with an exponentially decaying learning rate.")
         initial_lr = 1e-3
@@ -327,20 +326,20 @@ for lr in learning_rates:
         callback_list = [tensorboard_cb, model_cb, earlystopping_cb]
     else:
         print("Training a model with learning rate", str(lr))
-        num_epochs = 100
+        num_epochs = 50
         optimiser = tfk.optimizers.experimental.Nadam(learning_rate=lr)
         
-        run_logdir = get_run_logdir("-bn", "-" + str(lr))
-        tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
+        # run_logdir = get_run_logdir("-bn", "-" + str(lr))
+        # tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
         earlystopping_cb = tfk.callbacks.EarlyStopping(patience=10)
-        # model_cb = tfk.callbacks.ModelCheckpoint("./outputs/bn_cifar10_model.keras",
-        #                                          save_best_only=True)
+        model_cb = tfk.callbacks.ModelCheckpoint("./outputs/bn_cifar10_model.keras",
+                                                  save_best_only=True)
         earlystopping_cb = tfk.callbacks.EarlyStopping(patience=10)
-        callback_list = [earlystopping_cb, tensorboard_cb]
+        callback_list = [earlystopping_cb, model_cb]
 
     model.compile(loss='sparse_categorical_crossentropy', optimizer=optimiser,
                   metrics=['accuracy'])
-    print(run_logdir)
+    # print(run_logdir)
     
     t0 = time.time()   
     history = model.fit(X_train_scaled, y_train, epochs=num_epochs,
@@ -354,10 +353,14 @@ for lr in learning_rates:
 
     print("Run time: ", run_time)
     
-# the best model had a learning rate of 1e-3 (much larger), but took 5.5 minutes to run
-# and was stopped at 28 epochs
+# the best model had a decaying learning rate and stopped at 1.55e-4 after 26 epochs
+# (about the same). It took 11.1 minutes to run (longer). Validation accuracy was 0.5303
+# (better).
+# the best model with a constant learning rate had a learning rate of 7e-4 (a little
+# larger), took 7.3 minutes to run (longer) and was stopped at 27 epochs (about the
+# same). Validation accuracy was 0.5217 (better).
 bn_perf_df = pd.DataFrame(bn_perf, columns=["model", "learning_rate", "val_loss",
-                                                "val_accuracy", "run_time"])
+                                            "val_accuracy", "run_time"])
 bn_perf_df2 = bn_perf_df.iloc[:, 1:]
 bn_perf_df2.to_csv("./outputs/bn_perf.csv", index=False)
 
@@ -365,9 +368,9 @@ bn_perf_df2.to_csv("./outputs/bn_perf.csv", index=False)
 # replace batch normalisation with selu and make the necessary adjustments to ensure the
 # DNN self-normalises (e.g. standardise input features, use LeCun normal initialisation,
 # use only a sequence of dense layers)
-learning_rates = [3e-3, 1e-3, 9e-4, 7e-4, 5e-4, 3e-4, 1e-4, 9e-5, 7e-5, 5e-5, 3e-5, 1e-5,
-                  -1]
-learning_rates = [3e-3, 1e-4, 9e-5, 7e-5, 5e-5, 3e-5, 1e-5, -1]
+# 1e-3, 9e-4, 7e-4, 5e-4, -1
+learning_rates = [3e-4, 1e-4, 9e-5, 7e-5, 5e-5, 3e-5]
+learning_rates = [7e-5]
 
 selu_perf = []
 for lr in learning_rates:
@@ -380,7 +383,6 @@ for lr in learning_rates:
     model.add(tfk.layers.Dense(10, activation='softmax'))
     # model.summary()
 
-    # train the model using nadam optimisation and early stopping
     if lr < 0:
         print("Training a model with an exponentially decaying learning rate.")
         initial_lr = 1e-3
@@ -396,12 +398,14 @@ for lr in learning_rates:
         
         run_logdir = get_run_logdir("-selu", "-exp_decay")
         tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
+        earlystopping_cb = tfk.callbacks.EarlyStopping(patience=10)
         model_cb = tfk.callbacks.ModelCheckpoint(
             "./outputs/selu_cifar10_model_decay.keras", save_best_only=True)        
-        callback_list = [tensorboard_cb, model_cb]
+        callback_list = [tensorboard_cb, model_cb, earlystopping_cb]
 
     else:
         print("Training a model with learning rate", str(lr))
+        num_epochs = 50
         optimiser = tfk.optimizers.experimental.Nadam(learning_rate=lr)
         
         run_logdir = get_run_logdir("-selu", "-" + str(lr))
@@ -426,6 +430,14 @@ for lr in learning_rates:
     selu_perf.append((model, lr, model_eval, run_time))
 
     print("Run time: ", run_time)
+
+# the best model with a constant learning rate had a learning rate of 7e-5, took 5.54
+# minutes to run and was stopped at 31 epochs (about the same). Validation accuracy was
+# 0.4967.
+selu_perf_df = pd.DataFrame(selu_perf, columns=["model", "learning_rate", "val_loss",
+                                                "val_accuracy", "run_time"])
+selu_perf_df2 = selu_perf_df.iloc[:, 1:]
+selu_perf_df2.to_csv("./outputs/selu_perf.csv", index=False)
     
     
 # regularise the model with alpha dropout
@@ -460,14 +472,14 @@ for lr in learning_rates:
             
             run_logdir = get_run_logdir("-drop" + str(dr), "-exp_decay")
             tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
+            earlystopping_cb = tfk.callbacks.EarlyStopping(patience=10)
             # model_cb = tfk.callbacks.ModelCheckpoint(
             #     "./outputs/drop_cifar10_model_decay.keras", save_best_only=True)        
-            callback_list = [tensorboard_cb]
+            callback_list = [tensorboard_cb, earlystopping_cb]
     
         else:
             print("Training a model with learning rate", str(lr))
-            # choose a learning rate just before the loss shoots back up and re-train
-            # with early stopping
+            num_epochs = 50
             optimiser = tfk.optimizers.experimental.Nadam(learning_rate=lr)
             
             run_logdir = get_run_logdir("-drop" + str(dr), "-" + str(lr))
@@ -493,6 +505,18 @@ for lr in learning_rates:
         drop_perf.append((model, lr, model_eval, run_time))
     
         print("Run time: ", run_time)
+
+# the best model had a decaying learning rate and stopped at 1.55e-4 after 26 epochs
+# (about the same). It took 11.1 minutes to run (longer). Validation accuracy was 0.5303
+# (better).
+# the best model with a constant learning rate had a learning rate of 3e-5, took 12.98
+# minutes to run and was stopped at 37 epochs (about the same). Validation accuracy was
+# 0.4977.
+drop_perf_df = pd.DataFrame(drop_perf, columns=["model", "learning_rate", "val_loss",
+                                                "val_accuracy", "run_time"])
+drop_perf_df2 = drop_perf_df.iloc[:, 1:]
+drop_perf_df2.to_csv("./outputs/drop_perf.csv", index=False)
+
 
 # without retraining the best dropout models, see if MC Dropout increases accuracy
 y_probas = np.stack([model(X_test_scaled, training=True) for sample in range(100)])
