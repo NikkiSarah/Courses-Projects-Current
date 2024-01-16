@@ -192,11 +192,13 @@ tfk.layers.Dense(100, activation='elu', kernel_initializer='he_normal',
 # %% coding exercises
 
 # build a DNN on the CIFAR10 image dataset
-import tensorflow
+import tensorflow as tf
 import tensorflow.keras as tfk
 import os
 import time
 import pandas as pd
+import numpy as np
+import math
 
 import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -289,8 +291,10 @@ for lr in learning_rates:
     print("Run time: ", run_time)
 
 # the best model is the one with the lowest validation loss and achieved a validation
-# accuracy of 0.4913. It had a had a learning rate of 1e-4, took 5.0 minutes to run and
-# stopped after 30 epochs.
+# accuracy of 0.4730. It had a had a learning rate of 5e-5, took 15.4 minutes to run and
+# stopped after 23 epochs. The model with an exponentially decaying learning rate
+# achieved a validation accuracy of 0.4792, took 17.4 minutes to run and stopped after
+# 25 epochs.
 base_perf = base_perf + base_perf2
 base_perf_df = pd.DataFrame(base_perf, columns=["model", "learning_rate", "val_loss",
                                                 "val_accuracy", "run_time"])
@@ -365,9 +369,10 @@ for lr in learning_rates:
     print("Run time: ", run_time)
     
 # the best model is the one with the lowest validation loss and achieved a validation
-# accuracy of 0.5265. It had a had a learning rate of 7e-4, took 7.0 minutes to run and
-# stopped after 26 epochs. The model with a decaying learning rate achieved a validation
-# accuracy of 0.5333, took 7.6 minutes to run and stopped after 26 epochs.
+# accuracy of 0.5258. It had a had a learning rate of 9e-4, took 24.0 minutes to run and
+# stopped after 29 epochs. The model with an exponentially decaying learning rate
+# achieved a validation accuracy of 0.5273, took 23.9 minutes to run and stopped after
+# 27 epochs.
 bn_perf = bn_perf + bn_perf2
 bn_perf_df = pd.DataFrame(bn_perf, columns=["model", "learning_rate", "val_loss",
                                             "val_accuracy", "run_time"])
@@ -448,9 +453,10 @@ for lr in learning_rates:
     print("Run time: ", run_time)
 
 # the best model is the one with the lowest validation loss and achieved a validation
-# accuracy of 0.4802. It had a had a learning rate of 1e-3, took 11.7 minutes to run and
-# stopped after 24 epochs. The model with a decaying learning rate achieved a validation
-# accuracy of 0.5045, took 8.4 minutes to run and stopped after 17 epochs.
+# accuracy of 0.4837. It had a had a learning rate of 1e-3, took 12.9 minutes to run and
+# stopped after 24 epochs. The model with an exponentially decaying learning rate
+# achieved a validation accuracy of 0.4901, took 9.5 minutes to run and stopped after
+# 17 epochs.
 selu_perf = selu_perf + selu_perf2
 selu_perf_df = pd.DataFrame(selu_perf, columns=["model", "learning_rate", "val_loss",
                                             "val_accuracy", "run_time"])
@@ -490,7 +496,7 @@ for lr in learning_rates:
                 decay_rate=decay_factor, staircase=True)
             optimiser = tfk.optimizers.experimental.Nadam(learning_rate=lr_schedule)
             
-            run_logdir = get_run_logdir("-initdrop" + str(dr), "-exp_decay")
+            run_logdir = get_run_logdir("-drop" + str(dr), "-exp_decay")
             tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
             earlystopping_cb = tfk.callbacks.EarlyStopping(patience=10,
                                                            restore_best_weights=True)
@@ -499,7 +505,7 @@ for lr in learning_rates:
             callback_list = [tensorboard_cb, earlystopping_cb, model_cb]
         else:
             print("Training a model with learning rate", str(lr))
-            num_epochs = 20
+            num_epochs = 50
             optimiser = tfk.optimizers.experimental.Nadam(learning_rate=lr)
             
             run_logdir = get_run_logdir("-drop" + str(dr), "-" + str(lr))
@@ -522,16 +528,15 @@ for lr in learning_rates:
         model_eval = model.evaluate(X_val_std, y_val)
         print(model_eval)
         run_time = time.time() - t0
-        drop_perf2.append(("drop", lr, dr, model_eval[0], model_eval[1], run_time))
+        drop_perf.append(("drop", lr, dr, model_eval[0], model_eval[1], run_time))
     
         print("Run time: ", run_time)
 
-# the best model had a decaying learning rate and stopped at 1.55e-4 after 26 epochs
-# (about the same). It took 11.1 minutes to run (longer). Validation accuracy was 0.5303
-# (better).
-# the best model with a constant learning rate had a learning rate of 3e-5, took 12.98
-# minutes to run and was stopped at 37 epochs (about the same). Validation accuracy was
-# 0.4977.
+# the best model is the one with the lowest validation loss and achieved a validation
+# accuracy of 0.4499. It had a had a learning rate of 9e-4, took 3.16 minutes to run and
+# stopped after 22 epochs. The model with an exponentially decaying learning rate
+# achieved a validation accuracy of 0.4893, took 2.5 minutes to run and stopped after
+# 18 epochs.
 drop_perf = drop_perf + drop_perf2
 drop_perf_df = pd.DataFrame(drop_perf, columns=["model", "learning_rate", "dropout rate",
                                                 "val_loss", "val_accuracy", "run_time"])
@@ -539,83 +544,189 @@ drop_perf_df.to_csv("./outputs/drop_perf.csv", index=False)
 
 
 # without retraining the best dropout model, see if MC Dropout increases accuracy
+tensorflow.random.set_seed(42)
 y_probas = np.stack([model(X_test_std, training=True) for sample in range(100)])
-y_proba = y_probas.mean(axis=1)
-y_std = y_probas.std(axis=1)
+model.predict(X_test_std[:1]).round(3)
+
+y_std = y_probas.std(axis=0)
+y_std[0].round(3)
 
 y_pred = np.argmax(y_proba, axis=1)
-MC_accuracy = np.sum(y_pred == y_test) / len(y_test)
+MC_accuracy = (y_pred == y_test.reshape(-1,)).sum() / len(y_test)
 print(MC_accuracy)
 
+print(model.evaluate(X_test_std, y_test))
+# accuracy on the test set for the model with the exponentially decaying learning rate
+# was 0.4837. With MCDropout, accuracy dropped marginally to 0.4833.
 
-# retrain the model with 1cycle scheduling and see if it improves training speed and
+
+# retrain the model/s with 1cycle scheduling and see if it improves training speed and
 # accuracy
-class OneCycleScheduler(tfk.callbacks.Callback):
-    def __init__(self, iterations, max_rate, start_rate=None, last_iterations=None,
-                 last_rate=None):
-        self.iterations = iterations
-        self.max_rate = max_rate
-        self.start_rate = start_rate or max_rate / 10
-        self.half_iteration = (iterations - self.last_iterations) // 2
-        self.last_iterations = last_iterations or iterations // 10 + 1
-        self.last_rate = last_rate or self.start_rate / 1000
-        self.iteration = 0
-    def _interpolate(self, iter1, iter2, rate1, rate2):
-        return ((rate2 - rate1) * (self.iteration - iter1) / (iter2 - iter1) + rate1)
-    def on_batch_begin(self, batch, logs):
-        if self.iteration < self.half_iteration:
-            rate = self._interpolate(0, self.half_iteration, self.start_rate,
-                                     self.max_rate)
-        elif self.iteration < 2 * self.half_iteration:
-            rate = self._interpolate(self.half_iteration, 2 * self.half_iteration,
-                                     self.max_rate, self.start_rate)
-        else:
-            rate = self._interpolate(2 * self.half_iteration, self.iterations,
-                                     self.start_rate, self.last_rate)
-        self.iteration += 1
-        tfk.backend.set_value(self.model.optimizer.learning_rate, rate)
+class OneCycle(tfk.optimizers.schedules.LearningRateSchedule):
+    """A OneCycle that uses an cosine annealing schedule for cycle."""
 
+    def __init__(
+        self,
+        initial_learning_rate,
+        maximal_learning_rate,
+        cycle_size,
+        scale_fn=lambda x: 1.0,
+        shift_peak=0.3,
+        scale_mode="cycle",
+        final_lr_scale=1.0,
+        name=None,
+    ):
+        """
+        Applies cyclical cosine annealing learning rate.
+        It is possible to get the same learning rate scheduler as it was
+        used by FastAI for superconvergence: https://docs.fast.ai/callbacks.one_cycle.html
+        or Kaggle post: https://www.kaggle.com/avanwyk/tf2-super-convergence-with-the-1cycle-policy
+        In order to do that:
+        ```python
+         maximal_learning_rate = <value from lr finder>
+        initial_learning_rate = maximal_learning_rate / 25.0
+        cycle_size = 3-5 epoch (should be defined by you) It defines size of cycle
+        lr_schedule = CyclicalCosineAnnealing(
+            initial_learning_rate,
+            maximal_learning_rate,
+            cycle_size,
+            scale_fn = lambda x: 1.0, or lambda x: tf.where(x > 1.0, 0.8, 1.0)
+            shift_peak = 0.3
+            scale_mode="cycle",
+           final_lr_scale=1e-4)
+        ```
+        The learning rate schedule is also serializable and deserializable using
+        `tf.keras.optimizers.schedules.serialize` and
+        `tf.keras.optimizers.schedules.deserialize`.
+        Args:
+        initial_learning_rate: A scalar `float32` or `float64` `Tensor` or a
+            Python number.  The initial learning rate.
+        maximal_learning_rate: A scalar `float32` or `float64` `Tensor` or a
+            Python number.  The maximal learning rate.
+        step_size: A scalar `int32` or `int64` `Tensor` or a Python number.
+            Must be positive.  See the  half cycle size in interations.
+        scale_fn: scale your cycle (make it bigger/smaller for the next cycle)
+        shift_peak: shift the pick point to the left side
+        scale_mode: scale by "cycle" or "step"
+        final_lr_scale: filal_lr = initial_learning_rate * final_lr_scale
+        name: String.  Optional name of the operation.
+        Returns:
+        A 1-arg callable learning rate schedule that takes the current optimizer
+        step and outputs the cyclical learning rate, a scalar `Tensor` of the same
+        type as `initial_learning_rate`.
+        """
+        super(OneCycle, self).__init__()
+        self.initial_learning_rate = initial_learning_rate
+        self.maximal_learning_rate = maximal_learning_rate
+        self.cycle_size = cycle_size
+        self.scale_fn = scale_fn
+        self.scale_mode = scale_mode
+        self.shift_peak = shift_peak
+        self.final_lr_scale = final_lr_scale
+        self.name = name
+        # Defines the position of the max lr in steps
+        self._total_steps = cycle_size
+        self._first_half_steps = shift_peak * self._total_steps
+        self._second_half_steps = self._total_steps - self._first_half_steps
 
-drop_perf2 = []
-for dr in [0.1, 0.2, 0.3, 0.4, 0.5]:
-    tfk.backend.clear_session()
-    model = tfk.models.Sequential()
-    model.add(tfk.layers.Flatten(input_shape=[32, 32, 3]))
-    for _ in range(20):
-        model.add(tfk.layers.Dense(100, activation='selu',
-                                   kernel_initializer='lecun_normal'))
-    model.add(tfk.layers.AlphaDropout(dr))
-    model.add(tfk.layers.Dense(10, activation='softmax'))
-    # model.summary()
+    def get_cosine_annealing(self, start, end, step, step_size_part, cycle):
+        x = step / step_size_part
+        cosine_annealing = 1 + tf.math.cos(tf.constant(np.pi) * x)
+        return end + 0.5 * (start - end) * cosine_annealing
 
-    print("Training a model with dropout", str(dr))
-    optimiser = tfk.optimizers.experimental.Nadam(learning_rate=1e-3)
-    
-    run_logdir = get_run_logdir("-drop" + str(dr), "-" + str(lr))
-    
-    num_epochs=100
-    batch_size=32
-    onecycle_cb = OneCycleScheduler(
-        iterations=math.ceil(len(X_train_scaled) / batch_size) * num_epochs,
-        max_rate=0.05)
-    # model_cb = tfk.callbacks.ModelCheckpoint(
-    #     "./outputs/drop_cifar10_model.keras",
-    #                                          save_best_only=True)
-    callback_list = [tensorboard_cb, onecycle_cb]
+    def __call__(self, step, optimizer=False):
+        with tf.name_scope(self.name or "OneCycle"):
+            initial_learning_rate = tf.convert_to_tensor(self.initial_learning_rate, name="initial_learning_rate")
+            dtype = initial_learning_rate.dtype
+            # Cast all internal members to necessary type
+            step = tf.cast(step, dtype)
+            maximal_learning_rate = tf.cast(self.maximal_learning_rate, dtype)
+            first_half_steps = tf.cast(self._first_half_steps, dtype)
+            second_half_steps = tf.cast(self._second_half_steps, dtype)
+            total_steps = tf.cast(self._total_steps, dtype)
+            final_lr_scale = tf.cast(self.final_lr_scale, dtype)
+            # Check in % the cycle
+            cycle_progress = step / total_steps
+            cycle = tf.floor(1 + cycle_progress)
 
-    model.compile(loss='sparse_categorical_crossentropy', optimizer=optimiser,
-                  metrics=['accuracy'])
-    print(run_logdir)
-    
-    t0 = time.time()   
-    history = model.fit(X_train_scaled, y_train, epochs=num_epochs,
-                        callbacks=callback_list,
-                        validation_data = (X_val_scaled, y_val))
+            percentage_complete = 1.0 - tf.abs(cycle - cycle_progress)  # percent of iterations done
+            first_half = tf.cast(percentage_complete <= self.shift_peak, dtype)
 
-    model_eval = model.evaluate(X_val_scaled, y_val)
-    print(model_eval)
-    run_time = time.time() - t0
-    drop_perf.append((model, lr, model_eval, run_time))
+            normalized_first_half_step = step - (cycle - 1) * total_steps
+            normalized_second_half_step = normalized_first_half_step - first_half_steps
+            final_lr = initial_learning_rate * final_lr_scale
 
-    print("Run time: ", run_time)
+            lr_begin = self.get_cosine_annealing(
+                initial_learning_rate,
+                maximal_learning_rate,
+                normalized_first_half_step,
+                first_half_steps,
+                cycle,
+            )
+            lr_end = self.get_cosine_annealing(
+                maximal_learning_rate,
+                final_lr,
+                normalized_second_half_step,
+                second_half_steps,
+                cycle,
+            )
 
+            lr_res = first_half * lr_begin + (1.0 - first_half) * lr_end
+            mode_step = cycle if self.scale_mode == "cycle" else step
+
+            if optimizer == False:
+                lr_res = lr_res * self.scale_fn(mode_step)
+
+            return lr_res
+
+    def get_config(self):
+        return {
+            "initial_learning_rate": self.initial_learning_rate,
+            "maximal_learning_rate": self.maximal_learning_rate,
+            "cycle_size": self.cycle_size,
+            "scale_mode": self.scale_mode,
+            "shift_peak": self.shift_peak,
+        }
+
+tfk.backend.clear_session()
+model = tfk.models.Sequential()
+model.add(tfk.layers.Flatten(input_shape=[32, 32, 3]))
+for _ in range(20):
+    model.add(tfk.layers.Dense(100, activation='elu',
+                               kernel_initializer='he_normal'))
+model.add(tfk.layers.Dense(10, activation='softmax'))
+# model.summary()
+
+run_logdir = get_run_logdir("-base", "-" + str(lr))
+tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
+print(run_logdir)
+earlystopping_cb = tfk.callbacks.EarlyStopping(patience=10)
+
+maximal_learning_rate = 1e-3
+initial_learning_rate = maximal_learning_rate / 25.0
+batch_size = 32
+num_steps_per_epoch = len(X_train_scaled) // batch_size
+num_epochs = 50
+cycle_size = num_epochs / num_steps_per_epoch
+lr_schedule = OneCycle(
+    initial_learning_rate=initial_learning_rate,
+    maximal_learning_rate=maximal_learning_rate,
+    cycle_size=cycle_size,
+    scale_mode='cycle',
+    shift_peak=0.2,
+    name='CyclicalCosine',
+)
+
+optimiser = tfk.optimizers.experimental.Nadam(learning_rate=lr_schedule)
+model.compile(loss='sparse_categorical_crossentropy', optimizer=optimiser,
+              metrics=['accuracy'])
+        
+t0 = time.time()
+history = model.fit(X_train_scaled, y_train, epochs=num_epochs,
+                    callbacks=[tensorboard_cb, earlystopping_cb],
+                    validation_data = (X_val_scaled, y_val))
+
+model_eval = model.evaluate(X_val_scaled, y_val)
+print(model_eval)
+run_time = time.time() - t0
+print("Run time: ", run_time)
