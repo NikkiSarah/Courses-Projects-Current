@@ -54,11 +54,11 @@ def huber_fn(y_true, y_pred):
     linear_loss = tf.abs(error) - 0.5
     return tf.where(is_small_error, squared_loss, linear_loss)
 
-model.compile(loss=huber_fn, optimizer='Nadam')
+model.compile(loss=huber_fn, optimizer='Nadam', metrics='mae')
 model.fit(X_train, y_train, [...])
 
 # saving and loading models with custom components
-model = tfk.saving.load_model("my_model_with_a_custom_loss_threshold_2.keras",
+model = tfk.models.load_model("my_model_with_a_custom_loss_threshold_2.keras",
                               custom_objects={"huber_fn": create_huber(2.0)})
 
 class HuberLoss(tfk.losses.Loss):
@@ -71,6 +71,7 @@ class HuberLoss(tfk.losses.Loss):
         is_small_error = tf.abs(error) < self.threshold
         squared_loss = tf.square(error) / 2
         linear_loss = self.threshold * tf.abs(error) - self.threshold**2 / 2
+        return tf.where(is_small_error, squared_loss, linear_loss)
         
     def get_config(self):
         base_config = super().get_config()
@@ -78,7 +79,7 @@ class HuberLoss(tfk.losses.Loss):
 
 
 model.compile(loss=HuberLoss(2.), optimizer="nadam")
-model = tfk.saving.load_model("my_model_with_a_custom_loss_class.keras",
+model = tfk.models.load_model("my_model_with_a_custom_loss_class.keras",
                               custom_objects={"HuberLoss": HuberLoss})
 
 # custom activation functions, initialisers, regularisers and constraints
@@ -154,7 +155,7 @@ class MyDense(tfk.layers.Layer):
     def build(self, batch_input_shape):
         self.kernel = self.add_weight(name="kernel",
                                       shape=[batch_input_shape[-1], self.units],
-                                      initializer="glorot_normal")
+                                      initializer="he_normal")
         self.bias = self.add_weight(name="bias", shape=[self.units], initializer="zeros")
         super().build(batch_input_shape)
         
@@ -200,7 +201,7 @@ class MyGaussianNoise(tfk.layers.Layer):
 class ResidualBlock(tfk.layers.Layer):
     def __init__(self, n_layers, n_neurons, **kwargs):
         super().__init__(**kwargs)
-        self.hidden = [tfk.layers.Dense(n_neurons, activation="elu",
+        self.hidden = [tfk.layers.Dense(n_neurons, activation="relu",
                                         kernel_initializer="he_normal")
                        for _ in range(n_layers)]
     
@@ -214,7 +215,7 @@ class ResidualBlock(tfk.layers.Layer):
 class ResidualRegressor(tfk.Model):
     def __init__(self, output_dim, **kwargs):
         super().__init__(**kwargs)
-        self.hidden1 = tfk.layers.Dense(30, activation="elu", 
+        self.hidden1 = tfk.layers.Dense(30, activation="relu", 
                                         kernel_initializer="he_normal")
         self.block1 = ResidualBlock(2, 30)
         self.block2 = ResidualBlock(2, 30)
@@ -236,19 +237,22 @@ class ReconstructingRegressor(tfk.Model):
                                         kernel_initializer="lecun_normal")
                        for _ in range(5)]
         self.out = tfk.layers.Dense(output_dim)
+        self.reconstruction_mean = tfk.metrics.Mean(name="reconstruction_error")
 
     def build(self, batch_input_shape):
         n_inputs = batch_input_shape[-1]
         self.reconstruct = tfk.layers.Dense(n_inputs)
-        super().build(batch_input_shape)
 
-    def call(self, inputs):
+    def call(self, inputs, training=None):
         Z = inputs
         for layer in self.hidden:
             Z = layer(Z)
         reconstruction = self.reconstruct(Z)
         recon_loss = tf.reduce_mean(tf.square(reconstruction - inputs))
         self.add_loss(0.05 * recon_loss)
+        if training:
+            result = self.reconstruction_mean(recon_loss)
+            self.add_metric(result)
         return self.out(Z)
 
 
@@ -322,21 +326,21 @@ def random_batch(X, y, batch_size=32):
     return X[idx], y[idx]
 
 def print_status_bar(iteration, total, loss, metrics=None):
-    metrics = " - ".join(["{}: {:.4f}".format(m.name, m.result())
+    metrics = " - ".join([f"{m.name}: {m.result():.4f}"
                           for m in [loss] + (metrics or [])])
     end = "" if iteration < total else "\n"
-    print("\r{}/{} - ".format(iteration, total) + metrics, end=end)
+    print(f"\r{iteration}/{total} - " + metrics, end=end)
 
 n_epochs = 5
 batch_size = 32
 n_steps = len(X_train) // batch_size
 optimiser = tfk.optimizers.Nadam(learning_rate=0.01)
-loss_fn = tfk.losses.MeanSquaredError()
+loss_fn = tfk.losses.mean_squared_error
 mean_loss = tfk.metrics.Mean()
 metrics = [tfk.metrics.MeanAbsoluteError()]
 
 for epoch in range(1, n_epochs + 1):
-    print("Epoch {}/{}".format(epoch, n_epochs))
+    print(f"Epoch {epoch}/{n_epochs}")
     for step in range(1, n_steps + 1):
         X_batch, y_batch = random_batch(X_train_scaled, y_train)
         with tf.GradientTape() as tape:
@@ -376,36 +380,142 @@ def tf_cube(X):
 print(tf_cube.python_function(2))
 
 # %% coding exercises
+import tensorflow as tf
+import tensorflow.keras as tfk
+from sklearn.datasets import fetch_california_housing
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+import numpy as np
+from tqdm.notebook import trange
+from collections import OrderedDict
 
 # implement a custom layer that performs layer normalisation
-class MyLayerNormalisation(tfk.layers.Layer):
-    def __init__(self, **kwargs):
+class LayerNormalisation(tfk.layers.Layer):
+    def __init__(self, eps=0.001, **kwargs):
         super().__init__(**kwargs)
+        self.eps = eps
 
 # - the build() method should define two trainable weights alpha and beta, both of shape
 #   input_shape[-1:] and data type tf.float32. Alpha should be initialised with 1s and
 #   beta with zeros
-    def build(self, input_shape):
-        self.alpha = self.add_weight(name="alpha", shape=input_shape[-1:],
-                                     dtype=tf.float32, initializer="zeros")
-        self.beta = self.add_weight(name="beta", shape=input_shape[-1:],
-                                    dtype=tf.float32, initializer="zeros")
-        super().build(input_shape)
+    def build(self, batch_input_shape):
+        self.alpha = self.add_weight(name="alpha", shape=batch_input_shape[-1:],
+                                     dtype=np.float32, initializer="ones")
+        self.beta = self.add_weight(name="beta", shape=batch_input_shape[-1:],
+                                    dtype=np.float32, initializer="zeros")
 
 # - the call() method should compute the mean and standard devision of each instance's
 #   features. You can use tf.nn.moments(inputs, axes=-1, keepdims=True), which returns
 #   the mean and variance of all instances. Then the function should compute and return
 #   alpha*(X - mean) / (stddev + epsilon), where epsilon is a small constant to avoid
 #   division by zero
-    def call(self, ):
-        
-        return alpha*(X - mean) / (stddev + epsilon)
+    def call(self, X):
+        mean, variance = tf.nn.moments(X, axes=-1, keepdims=True)
+        return self.alpha * (X - mean) / (tf.sqrt(variance + self.eps)) + self.beta
+    
+    def get_config(self):
+        base_config = super().get_config()
+        return {**base_config, "eps": self.eps}
 
 # - ensure that the custom layer produces similar output as tfk.layers.LayerNormalization
+housing = fetch_california_housing()
+X_train_val, X_test, y_train_val, y_test = train_test_split(
+    housing.data, housing.target.reshape(-1, 1), random_state=42)
+X_train, X_val, y_train, y_val = train_test_split(
+    X_train_val, y_train_val, random_state=42)
+
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_val = scaler.transform(X_val)
+X_test = scaler.transform(X_test)
+
+X = X_train.astype(np.float32)
+custom_layer_norm = LayerNormalisation()
+tf_layer_norm = tfk.layers.LayerNormalization()
+
+print(tf.reduce_mean(tfk.losses.mean_absolute_error(tf_layer_norm(X),
+                                                    custom_layer_norm(X))))
 
 # train a model using a custom training loop on the Fashion MNIST dataset
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
+
+fashion_mnist = tfk.datasets.fashion_mnist
+(X_train_val, y_train_val), (X_test, y_test) = fashion_mnist.load_data()
+print(X_train_val.shape)
+print(X_train_val.dtype)
+
+X_val, X_train = X_train_val[:5000] / 255.0, X_train_val[5000:] / 255.0
+y_val, y_train = y_train_val[:5000], y_train_val[5000:]
+class_names = ['T-shirt/Top', 'Trousers', 'Sweater', 'Dress', 'Coat', 'Sandal', 'Shirt',
+               'Sneakers', 'Bag', 'Boot']
+
+model = tfk.Sequential([
+    tfk.layers.Flatten(input_shape=[28, 28]),
+    tfk.layers.Dense(100, activation="relu"),
+    tfk.layers.Dense(10, activation="softmax"),
+])
+
 # - display the epoch, iteration, mean training loss and mean accuracy over each epoch,
 #   and the validation loss and accuracy at the end of each epoch
+def random_batch(X, y, batch_size=32):
+    idx = np.random.randint(len(X), size=batch_size)
+    return X[idx], y[idx]
+
+def print_status_bar(iteration, total, loss, metrics=None):
+    metrics = " - ".join([f"{m.name}: {m.result():.4f}"
+                          for m in [loss] + (metrics or [])])
+    end = "" if iteration < total else "\n"
+    print(f"\r{iteration}/{total} - " + metrics, end=end)
+
+n_epochs = 5
+batch_size = 32
+n_iter = len(X_train) // batch_size
+metric = [tfk.metrics.MeanAbsoluteError()]
+optimiser = tfk.optimizers.Nadam(learning_rate=0.01)
+
+loss_fn = tf.keras.losses.sparse_categorical_crossentropy
+mean_loss = tfk.metrics.Mean()
+
+with trange(1, n_epochs+1, desc="All epochs") as epochs:
+    for epoch in epochs:
+        with trange(1, n_steps+1, desc=f"Epoch {epoch}/{n_epochs}") as steps:
+            for step in steps:
+                X_batch, y_batch = random_batch(X_train, y_train)
+                with tf.GradientTape() as tape:
+                    y_pred = model(X_batch)
+                    main_loss = tf.reduce_mean(
+                        tfk.losses.mean_loss(y_batch, y_pred))
+                    loss = tf.add_n([main_loss] + model.losses)
+                gradients = tape.gradient(loss, model.trainable_variables)
+                optimiser.apply_gradients(zip(gradients, model.trainable_variables))
+                for variable in model.variables:
+                    if variable.constraint is not None:
+                        variable.assign(variable.constraint(variable))
+                
+                status = OrderedDict()
+                mean_loss(loss)
+                status["loss"] = mean_loss.result().numpy()
+                
+                for metric in [tfk.metrics.SparseCategoricalAccuracy()]:
+                    metric(y_batch, y_pred)
+                    status[metric.name] = metric.result().numpy()
+                steps.set_postfix(status)
+                
+                y_pred = model(X_val)
+                status["val_loss"] = np.mean(loss_fn(y_val, y_pred))
+                status["val_accuracy"] = np.mean(
+                    tfk.metrics.sparse_categorical_accuracy(
+                        tf.constant(y_val, dtype=np.float32), y_pred))
+                steps.set_postfix(status)
+                
+                for metric in [mean_loss] + metrics:
+                    metric.reset_states()
+
 # - try using a different optimiser with a different learning rate for the upper and
 #   lower layers
+
+
+
+
 
