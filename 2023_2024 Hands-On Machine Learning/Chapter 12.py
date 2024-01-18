@@ -385,9 +385,8 @@ import tensorflow.keras as tfk
 from sklearn.datasets import fetch_california_housing
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-import numpy as np
-from tqdm.notebook import trange
 from collections import OrderedDict
+import numpy as np
 
 # implement a custom layer that performs layer normalisation
 class LayerNormalisation(tfk.layers.Layer):
@@ -469,53 +468,110 @@ def print_status_bar(iteration, total, loss, metrics=None):
     print(f"\r{iteration}/{total} - " + metrics, end=end)
 
 n_epochs = 5
-batch_size = 32
+batch_size = 64
 n_iter = len(X_train) // batch_size
-metric = [tfk.metrics.MeanAbsoluteError()]
 optimiser = tfk.optimizers.Nadam(learning_rate=0.01)
 
-loss_fn = tf.keras.losses.sparse_categorical_crossentropy
+loss_fn = tfk.losses.sparse_categorical_crossentropy
 mean_loss = tfk.metrics.Mean()
+metrics = [tfk.metrics.SparseCategoricalAccuracy()]
 
-with trange(1, n_epochs+1, desc="All epochs") as epochs:
-    for epoch in epochs:
-        with trange(1, n_steps+1, desc=f"Epoch {epoch}/{n_epochs}") as steps:
-            for step in steps:
-                X_batch, y_batch = random_batch(X_train, y_train)
-                with tf.GradientTape() as tape:
-                    y_pred = model(X_batch)
-                    main_loss = tf.reduce_mean(
-                        tfk.losses.mean_loss(y_batch, y_pred))
-                    loss = tf.add_n([main_loss] + model.losses)
-                gradients = tape.gradient(loss, model.trainable_variables)
-                optimiser.apply_gradients(zip(gradients, model.trainable_variables))
-                for variable in model.variables:
-                    if variable.constraint is not None:
-                        variable.assign(variable.constraint(variable))
+for epoch in range(1, n_epochs+1):
+    print(f"Epoch {epoch}/{n_epochs}")
+    for step in range(1, n_iter+1):
+        X_batch, y_batch = random_batch(X_train, y_train)
+        with tf.GradientTape() as tape:
+            y_pred = model(X_batch)
+            main_loss = tf.reduce_mean(loss_fn(y_batch, y_pred))
+            loss = tf.add_n([main_loss] + model.losses)
+            
+        gradients = tape.gradient(loss, model.trainable_variables)
+        optimiser.apply_gradients(zip(gradients, model.trainable_variables))
+        
+        for variable in model.variables:
+            if variable.constraint is not None:
+                variable.assign(variable.constraint(variable))    
                 
-                status = OrderedDict()
-                mean_loss(loss)
-                status["loss"] = mean_loss.result().numpy()
-                
-                for metric in [tfk.metrics.SparseCategoricalAccuracy()]:
-                    metric(y_batch, y_pred)
-                    status[metric.name] = metric.result().numpy()
-                steps.set_postfix(status)
-                
-                y_pred = model(X_val)
-                status["val_loss"] = np.mean(loss_fn(y_val, y_pred))
-                status["val_accuracy"] = np.mean(
-                    tfk.metrics.sparse_categorical_accuracy(
-                        tf.constant(y_val, dtype=np.float32), y_pred))
-                steps.set_postfix(status)
-                
-                for metric in [mean_loss] + metrics:
-                    metric.reset_states()
+        status = OrderedDict()
+        
+        mean_loss(loss)
+        status["loss"] = mean_loss.result().numpy()
+        for metric in metrics:
+            metric(y_batch, y_pred)
+            status[metric.name] = metric.result().numpy()
+        
+        print_status_bar(step, n_iter, mean_loss, metrics)
+            
+    y_pred = model(X_val)
+    status["val_loss"] = np.mean(loss_fn(y_val, y_pred))
+    status["val_accuracy"] = np.mean(tfk.metrics.sparse_categorical_accuracy(
+        tf.constant(y_val, dtype=np.float32), y_pred))
+    print(f"Validation loss: {status['val_loss']:.4f} - \
+          accuracy: {status['val_accuracy']:.4f}")
+    
+    for metric in [mean_loss] + metrics:
+        metric.reset_states()
 
 # - try using a different optimiser with a different learning rate for the upper and
 #   lower layers
+tfk.utils.set_random_seed(42)
 
+lower_layers = tfk.Sequential([
+    tfk.layers.Flatten(input_shape=[28, 28]),
+    tfk.layers.Dense(100, activation="relu"),
+])
+upper_layers = tfk.Sequential([
+    tfk.layers.Dense(10, activation="softmax"),
+])
+model = tf.keras.Sequential([
+    lower_layers, upper_layers
+])
 
+lower_optimiser = tfk.optimizers.Nadam(learning_rate=1e-3)
+upper_optimiser = tfk.optimizers.SGD(learning_rate=1e-4)
 
+n_epochs = 5
+batch_size = 64
+n_iter = len(X_train) // batch_size
 
+loss_fn = tfk.losses.sparse_categorical_crossentropy
+mean_loss = tfk.metrics.Mean()
+metrics = [tfk.metrics.SparseCategoricalAccuracy()]
 
+for epoch in range(1, n_epochs+1):
+    print(f"Epoch {epoch}/{n_epochs}")
+    for step in range(1, n_iter+1):
+        X_batch, y_batch = random_batch(X_train, y_train)
+        with tf.GradientTape(persistent=True) as tape:
+            y_pred = model(X_batch)
+            main_loss = tf.reduce_mean(loss_fn(y_batch, y_pred))
+            loss = tf.add_n([main_loss] + model.losses)
+        
+        for layer, optimiser in ((lower_layers, lower_optimiser),
+                                 (upper_layers, upper_optimiser)):
+            gradients = tape.gradient(loss, model.trainable_variables)
+            optimiser.apply_gradients(zip(gradients, model.trainable_variables))
+        del tape
+        for variable in model.variables:
+            if variable.constraint is not None:
+                variable.assign(variable.constraint(variable))    
+                
+        status = OrderedDict()
+        
+        mean_loss(loss)
+        status["loss"] = mean_loss.result().numpy()
+        for metric in metrics:
+            metric(y_batch, y_pred)
+            status[metric.name] = metric.result().numpy()
+        
+        print_status_bar(step, n_iter, mean_loss, metrics)
+            
+    y_pred = model(X_val)
+    status["val_loss"] = np.mean(loss_fn(y_val, y_pred))
+    status["val_accuracy"] = np.mean(tfk.metrics.sparse_categorical_accuracy(
+        tf.constant(y_val, dtype=np.float32), y_pred))
+    print(f"Validation loss: {status['val_loss']:.4f} - \
+          accuracy: {status['val_accuracy']:.4f}")
+    
+    for metric in [mean_loss] + metrics:
+        metric.reset_states()
