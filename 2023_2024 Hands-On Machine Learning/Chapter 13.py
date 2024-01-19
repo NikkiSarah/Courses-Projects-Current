@@ -124,11 +124,11 @@ model = tfk.Sequential([
     tfk.layers.Dense(1)
     ])
 model.compile(loss='mse', optimizer='sgd')
-model.fit(train_set, validation_data=val_set, epochs=5)
+model.fit(train_set, validation_data=val_set, epochs=10)
 
-test_mse = model.evaluate(test_set)
+model.evaluate(test_set)
 new_set = test_set.take(3)
-y_pred = model.predict(new_set)
+model.predict(new_set)
 
 optimiser = tfk.optimizers.SGD(learning_rate=0.01)
 loss_fn = tfk.losses.mean_squared_error
@@ -159,25 +159,138 @@ for epoch in range(n_epochs):
     train_one_epoch(model, optimiser, loss_fn, train_set)
 
 # %% the TFRecord format
+import tensorflow as tf
+from tensorflow.train import (BytesList, Int64List, Feature, Features, Example,
+                              FeatureList, FeatureLists, SequenceExample)
 
 # compressed TFRecord files
+with tf.io.TFRecordWriter("./outputs/my_data.tfrecord") as f:
+    f.write(b"This is the first record")
+    f.write(b"And this is the second record")
 
-# a brief introduction to protocol buffers
+filepaths = ["./outputs/my_data.tfrecord"]
+dataset = tf.data.TFRecordDataset(filepaths)
+for item in dataset:
+    print(item)
+    
+options = tf.io.TFRecordOptions(compression_type="GZIP")
+with tf.io.TFRecordWriter("./outputs/my_compressed.tfrecord", options) as f:
+    f.write(b"Compress, compress, compress!")
+    
+dataset = tf.data.TFRecordDataset(["./outputs/my_compressed.tfrecord"],
+                                  compression_type="GZIP")
 
 # tensorflow protobuffs
+person_example = Example(
+    features=Features(
+        feature={
+            "name": Feature(bytes_list=BytesList(value=[b"Alice"])),
+            "id": Feature(int64_list=Int64List(value=[123])),
+            "emails": Feature(bytes_list=BytesList(value=[b"a@b.com",
+                                                          b"c@d.com"]))
+            }))
+
+with tf.io.TFRecordWriter("./outputs/my_contacts.tfrecord") as f:
+    for _ in range(5):
+        f.write(person_example.SerializeToString())
 
 # loading and parsing examples
+feature_description = {
+    "name": tf.io.FixedLenFeature([], tf.string, default_value=""),
+    "id": tf.io.FixedLenFeature([], tf.int64, default_value=0),
+    "emails": tf.io.VarLenFeature(tf.string)
+    }
+
+for serialized_example in tf.data.TFRecordDataset(["./outputs/my_contacts.tfrecord"]):
+    parsed_example = tf.io.parse_single_example(serialized_example, feature_description)
+
+tf.sparse.to_dense(parsed_example["emails"], default_value=b"")
+parsed_example["emails"].values
+
+dataset = tf.data.TFRecordDataset(["./outputs/my_contacts.tfrecord"]).batch(10)
+for serialized_examples in dataset:
+    parsed_examples = tf.io.parse_example(serialized_examples, feature_description)
+    print(parsed_examples)
 
 # handling lists of lists using the SequenceExample protobuff
+context = Features(feature={
+    "author_id": Feature(int64_list=Int64List(value=[123])),
+    "title": Feature(bytes_list=BytesList(value=[b"A", b"desert", b"place", b"."])),
+    "pub_date": Feature(int64_list=Int64List(value=[1623, 12, 25]))
+})
+
+content = [["When", "shall", "we", "three", "meet", "again", "?"],
+           ["In", "thunder", ",", "lightning", ",", "or", "in", "rain", "?"]]
+comments = [["When", "the", "hurlyburly", "'s", "done", "."],
+            ["When", "the", "battle", "'s", "lost", "and", "won", "."]]
+
+def words_to_feature(words):
+    return Feature(bytes_list=BytesList(value=[word.encode("utf-8") for word in words]))
+
+content_features = [words_to_feature(sentence) for sentence in content]
+comments_features = [words_to_feature(comment) for comment in comments]
+            
+sequence_example = SequenceExample(
+    context=context,
+    feature_lists=FeatureLists(feature_list={
+        "content": FeatureList(feature=content_features),
+        "comments": FeatureList(feature=comments_features)
+    }))
+print(sequence_example)
+
+serialised_sequence_example = sequence_example.SerializeToString()
+
+context_feature_descriptions = {
+    "author_id": tf.io.FixedLenFeature([], tf.int64, default_value=0),
+    "title": tf.io.VarLenFeature(tf.string),
+    "pub_date": tf.io.FixedLenFeature([3], tf.int64, default_value=[0, 0, 0]),
+}
+sequence_feature_descriptions = {
+    "content": tf.io.VarLenFeature(tf.string),
+    "comments": tf.io.VarLenFeature(tf.string),
+}
+
+parsed_context, parsed_feature_lists = tf.io.parse_single_sequence_example(
+    serialised_sequence_example, context_feature_descriptions,
+    sequence_feature_descriptions)
+parsed_content = tf.RaggedTensor.from_sparse(parsed_feature_lists["content"])
 
 
 # %% preprocessing the input features
 import tensorflow as tf
-import tensorflow.keras as tfk
+from sklearn.datasets import fetch_california_housing
+from sklearn.model_selection import train_test_split
 import numpy as np
+import tensorflow.keras as tfk
 import tensorflow_hub as hub
 from sklearn.datasets import load_sample_images
 import matplotlib.pyplot as plt
+
+housing = fetch_california_housing()
+X_train_val, X_test, y_train_val, y_test = train_test_split(
+    housing.data, housing.target.reshape(-1, 1), random_state=42)
+X_train, X_val, y_train, y_val = train_test_split(
+    X_train_val, y_train_val, random_state=42)
+
+means = np.mean(X_train, axis=0, keepdims=True)
+stds = np.std(X_train, axis=0, keepdims=True)
+eps = tfk.backend.epsilon()
+
+model = tf.keras.Sequential([
+    tfk.layers.Lambda(lambda inputs: (inputs - means))
+    
+    tf.keras.layers.Dense(30, activation="relu", kernel_initializer="he_normal",
+                          input_shape=X_train.shape[1:]),
+    tf.keras.layers.Dense(1),
+])
+model.compile(loss="mse", optimizer="sgd")
+model.fit(X_train, y_train, validation_data=(X_val, y_val), epochs=5)
+
+
+model.compile(loss="sparse_categorical_crossentropy", optimizer="nadam",
+              metrics=["accuracy"])
+history = model.fit(train_set, validation_data=val_set, epochs=5)
+test_loss, test_accuracy = model.evaluate(test_set)
 
 # encoding categorical features using one-hot vectors
 
