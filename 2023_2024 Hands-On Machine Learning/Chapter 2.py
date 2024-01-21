@@ -1,171 +1,171 @@
+#%% Exercise 1
+
+# try a SVM with various hyperparameters such as a linear kernel with various values for
+# C or a rbf kernel with various values for C and gamma. How does the best predictor
+# perform?
 import pandas as pd
-import numpy as np
-from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.model_selection import train_test_split
+# data processing
+from sklearn.pipeline import make_pipeline
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+import numpy as np
+from sklearn.preprocessing import FunctionTransformer, StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer, make_column_selector
+# cluster similarity class
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-
-from sklearn.svm import SVR
-from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import cross_val_score, GridSearchCV, RandomizedSearchCV
-from sklearn.feature_selection import RFECV
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics.pairwise import rbf_kernel
+from sklearn.cluster import KMeans
+# model training
+import os
 import time
+from sklearn.pipeline import Pipeline
+from sklearn.svm import SVR
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from sklearn.feature_selection import SelectFromModel
+from sklearn.ensemble import RandomForestRegressor
 
-housing = pd.read_csv('./datasets/housing.csv')
-
+# load and split the data
+housing = pd.read_csv("./datasets/housing.csv")
 housing.info()
-desc = housing.describe()
 
-housing['income_cat'] = pd.cut(housing.median_income,
-                               bins=[0., 1.5, 3., 4.5, 6., np.inf],
+housing["income_cat"] = pd.cut(housing["median_income"],
+                               bins=[0., 1.5, 3.0, 4.5, 6., np.inf],
                                labels=[1, 2, 3, 4, 5])
 
-split = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-for train_idx, test_idx in split.split(housing, housing.income_cat):
-    train = housing.loc[train_idx]
-    test = housing.loc[test_idx]
+housing_data = housing.drop('median_house_value', axis=1)
+housing_labels = housing.median_house_value.copy()
 
-for set_ in (train, test):
-    set_.drop("income_cat", axis=1, inplace=True)
+X_train, X_test, y_train, y_test = train_test_split(
+    housing_data, housing_labels, test_size=0.2, stratify=housing.income_cat,
+    random_state=42)
+X_train.drop("income_cat", inplace=True, axis=1)
+X_test.drop("income_cat", inplace=True, axis=1)
 
-# prepare the training data
-train_labels = train.median_house_value.copy()
-train = train.drop('median_house_value', axis=1)
+# clean and process the data
+def column_ratio(X):
+    return X[:, [0]] / X[:, [1]]
 
-train_num = train.drop('ocean_proximity', axis=1)
+def ratio_name(function_transformer, feature_names_in):
+    return ["ratio"]
 
-rooms_idx, bedrooms_idx, population_idx, households_idx = 3, 4, 5, 6
+def ratio_pipeline():
+    return make_pipeline(
+        SimpleImputer(strategy="median"),
+        FunctionTransformer(column_ratio, feature_names_out=ratio_name),
+        StandardScaler())
 
+class ClusterSimilarity(BaseEstimator, TransformerMixin):
+    def __init__(self, n_clusters=10, gamma=1.0, random_state=None):
+        self.n_clusters = n_clusters
+        self.gamma = gamma
+        self.random_state = random_state
 
-class CombinedAttributesAdder(BaseEstimator, TransformerMixin):
-    def __init__(self, add_bedrooms_per_room=True):
-        self.add_bedrooms_per_room = add_bedrooms_per_room
-
-    def fit(self, X, y=None):
-        return self
+    def fit(self, X, y=None, sample_weight=None):
+        self.kmeans_ = KMeans(self.n_clusters, random_state=self.random_state)
+        self.kmeans_.fit(X, sample_weight=sample_weight)
+        return self 
 
     def transform(self, X):
-        rooms_per_household = X[:, rooms_idx] / X[:, households_idx]
-        population_per_household = X[:, population_idx] / X[:, households_idx]
-        if self.add_bedrooms_per_room:
-            bedrooms_per_room = X[:, bedrooms_idx] / X[:, rooms_idx]
-            return np.c_[X, rooms_per_household, population_per_household, bedrooms_per_room]
-        else:
-            return np.c_[X, rooms_per_household, population_per_household]
+        return rbf_kernel(X, self.kmeans_.cluster_centers_, gamma=self.gamma)
 
+    def get_feature_names_out(self, names=None):
+        return [f"Cluster {i} similarity" for i in range(self.n_clusters)]
 
-num_pipeline = Pipeline([
-    ('imputer', SimpleImputer(strategy='median')),
-    ('attribs_adder', CombinedAttributesAdder()),
-    ('std_scaler', StandardScaler())
-])
+log_pipeline = make_pipeline(
+    SimpleImputer(strategy="median"),
+    FunctionTransformer(np.log, feature_names_out="one-to-one"),
+    StandardScaler())
+cluster_simil = ClusterSimilarity(n_clusters=10, gamma=1., random_state=42)
+default_num_pipeline = make_pipeline(SimpleImputer(strategy="median"),
+                                     StandardScaler())
+cat_pipeline = make_pipeline(SimpleImputer(strategy="most_frequent"),
+                             OneHotEncoder(handle_unknown="ignore"))
+preprocessing = ColumnTransformer([
+        ("bedrooms", ratio_pipeline(), ["total_bedrooms", "total_rooms"]),
+        ("rooms_per_house", ratio_pipeline(), ["total_rooms", "households"]),
+        ("people_per_house", ratio_pipeline(), ["population", "households"]),
+        ("log", log_pipeline, ["total_bedrooms", "total_rooms", "population",
+                               "households", "median_income"]),
+        ("geo", cluster_simil, ["latitude", "longitude"]),
+        ("cat", cat_pipeline, make_column_selector(dtype_include=object)),
+    ],
+    remainder=default_num_pipeline)
 
-num_attribs = list(train_num)
-cat_attribs = ['ocean_proximity']
+# X_train_prepared = preprocessing.fit_transform(X_train)
+# print(X_train_prepared.shape)
+# preprocessing.get_feature_names_out()
 
-full_pipeline = ColumnTransformer([
-    ('num', num_pipeline, num_attribs),
-    ('cat', OneHotEncoder(), cat_attribs)
-])
+# train a SVM using a data sample and 3-fold grid search
+n_cpu = os.cpu_count()
+print("Number of CPUs in the system:", n_cpu)
 
-training_data = full_pipeline.fit_transform(train)
+X_train_sub = X_train[:5000]
+y_train_sub = y_train[:5000]
 
-# train an SVM model on the training data
-svm_reg = SVR()
-svm_reg.fit(training_data, train_labels)
-
-predictions = svm_reg.predict(training_data)
-svm_rmse = np.sqrt(mean_squared_error(train_labels, predictions))
-print(svm_rmse)
-
-scores = cross_val_score(svm_reg, training_data, train_labels, scoring='neg_mean_squared_error', cv=10)
-svm_rmse_scores = np.sqrt(-scores)
-
-
-def display_scores(scores):
-    print("Scores: ", scores)
-    print("Mean: ", scores.mean())
-    print("Standard deviation", scores.std())
-
-
-display_scores(svm_rmse_scores)
-
-# experiment with different values of 'C' and 'gamma'
+full_pipeline = Pipeline([
+    ("preprocessing", preprocessing),
+    ("svr", SVR()),
+    ])
 param_grid = [
-    {'kernel': ['linear'], 'C': [2e5, 2.5e5, 5e5, 1e6, 1.5e6, 2e6]},
-    {'kernel': ['rbf'], 'C': [2e5, 2.5e5, 5e5, 1e6, 1.5e6, 2e6], 'gamma': ['scale', 'auto', 0.001, 0.01, 0.1, 1]}
+    {"svr__kernel": ["linear"], "svr__C": [1e2, 3e2, 1e3, 3e3, 1e4, 3e4, 1e5, 3e5]},
+    {"svr__kernel": ["rbf"], "svr__C": [1e3, 3e3, 1e4, 3e4, 1e5, 3e5],
+     "svr__gamma": ['scale', 'auto', 0.01, 0.03, 0.1, 0.3, 1., 3.]}
+    ]
+t0 = time.time()
+grid_search = GridSearchCV(full_pipeline, param_grid,
+                           scoring="neg_root_mean_squared_error", n_jobs=n_cpu-2, cv=3)
+grid_search.fit(X_train_sub, y_train_sub)
+run_time = time.time() - t0
+
+print(run_time)
+print(grid_search.best_params_)
+
+cv_res = pd.DataFrame(grid_search.cv_results_)
+cv_res.sort_values(by="mean_test_score", ascending=False, inplace=True)
+grid_search_best_rmse = -grid_search.best_score_
+print(grid_search_best_rmse)
+
+#%% Exercise 2
+# try replacing grid search with random search
+t0 = time.time()
+random_search = RandomizedSearchCV(full_pipeline, param_grid, n_iter=50,
+                                   scoring="neg_root_mean_squared_error", n_jobs=n_cpu-2,
+                                   cv=3, random_state=42)
+random_search.fit(X_train_sub, y_train_sub)
+run_time = time.time() - t0
+
+print(run_time)
+print(random_search.best_params_)
+
+cv_res = pd.DataFrame(random_search.cv_results_)
+cv_res.sort_values(by="mean_test_score", ascending=False, inplace=True)
+random_search_best_rmse = -random_search.best_score_
+print(random_search_best_rmse)
+
+## Exercise 3: add a SelectFromModel transformer to the transformation pipeline to select
+## only the most important attributes
+selector_pipeline = Pipeline([
+        ("preprocessing", preprocessing),
+        ("selector", SelectFromModel(RandomForestRegressor(random_state=42))),
+        ("svr", SVR(C=random_search.best_params_["svr__C"],
+                    gamma=random_search.best_params_["svr__gamma"],
+                    kernel=random_search.best_params_["svr__kernel"])),
+        ])
+param_grid = [
+    {"selector__threshold": ["median", "mean", 1e-5, 1e-3],
+     "selector__max_features": [3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 24]}
     ]
 
 t0 = time.time()
-grid_search = GridSearchCV(SVR(), param_grid, scoring='neg_mean_squared_error', n_jobs=-1, cv=3, verbose=1)
-grid_search.fit(training_data, train_labels)
+grid_search = GridSearchCV(selector_pipeline, param_grid,
+                           scoring="neg_root_mean_squared_error", n_jobs=n_cpu-2, cv=3)
+grid_search.fit(X_train_sub, y_train_sub)
 run_time = time.time() - t0
-print(run_time) # about 25 minutes
 
-best_model_grid = grid_search.best_estimator_
-print(best_model_grid)
+print(run_time)
+print(grid_search.best_params_)
 
-best_score_grid = np.sqrt(-grid_search.best_score_)
-print(best_score_grid)
-
-best_params_grid = grid_search.best_params_
-print(best_params_grid)
-
-results_grid = pd.DataFrame(grid_search.cv_results_)
-results_grid.sort_values(by='rank_test_score', inplace=True)
-
-# use a randomised instead of grid search
-t0 = time.time()
-random_search = RandomizedSearchCV(SVR(), param_grid, n_iter=50, scoring='neg_mean_squared_error',
-                                   n_jobs=-1, cv=3, verbose=1)
-random_search.fit(training_data, train_labels)
-run_time = time.time() - t0
-print(run_time) # about 40 minutes
-
-best_model_random = random_search.best_estimator_
-print(best_model_random)
-
-best_score_random = np.sqrt(-random_search.best_score_)
-print(best_score_random)
-
-best_params_random = random_search.best_params_
-print(best_params_random)
-
-results_random = pd.DataFrame(random_search.cv_results_)
-results_random.sort_values(by='rank_test_score', inplace=True)
-
-# add a transformer in the preparation pipeline to select only the most important attributes
-feature_selection_pipeline = Pipeline([
-    ('preparation', full_pipeline),
-    ('feature_selection', RFECV(RandomForestRegressor(), verbose=1, cv=3, scoring='neg_mean_squared_error', n_jobs=-1))
-])
-
-training_data2 = feature_selection_pipeline.fit_transform(train, train_labels)
-
-selected_features = feature_selection_pipeline['feature_selection'].get_support()
-cat_features = feature_selection_pipeline['preparation'].named_transformers_['cat'].get_feature_names_out()
-num_features = np.append(train.columns[:-1], ['rooms_per_household', 'population_per_household', 'bedrooms_per_room'])
-input_features = np.append(num_features, cat_features)
-output_features = input_features[selected_features]
-
-# create a single pipeline that does the full data preparation plus the final prediction
-final_pipeline = Pipeline([
-    ('preparation', full_pipeline),
-    ('feature_selection', RFECV(RandomForestRegressor(), verbose=1, cv=3, scoring='neg_mean_squared_error', n_jobs=-1)),
-    ('model', SVR(**random_search.best_params_))
-])
-
-final_pipeline.fit(train, train_labels)
-train_preds = final_pipeline.predict(train)
-svm_rmse_train = np.sqrt(mean_squared_error(train_labels, train_preds))
-print(svm_rmse_train)
-
-test_labels = test.median_house_value.copy()
-test = test.drop('median_house_value', axis=1)
-
-predictions = final_pipeline.predict(test, test_labels)
-svm_rmse_test = np.sqrt(mean_squared_error(train_labels, train_preds))
-print(svm_rmse_test)
+cv_res = pd.DataFrame(grid_search.cv_results_)
+cv_res.sort_values(by="mean_test_score", ascending=False, inplace=True)
+grid_search_best_rmse = -grid_search.best_score_
+print(grid_search_best_rmse)

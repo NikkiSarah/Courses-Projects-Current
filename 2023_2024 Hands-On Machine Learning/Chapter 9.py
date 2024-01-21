@@ -1,3 +1,120 @@
+#%% Exercise 10
+from sklearn.datasets import fetch_olivetti_faces
+from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+import numpy as np
+import matplotlib.pyplot as plt
+# load the olivetti faces dataset and split it into a training, validation and test set,
+# using stratified sampling
+faces, labels = fetch_olivetti_faces(return_X_y=True)
+
+ss = StratifiedShuffleSplit(n_splits=1, test_size=40, random_state=42)
+train_val_idx, test_idx = next(ss.split(faces, labels))
+X_train_val = faces[train_val_idx]
+y_train_val = labels[train_val_idx]
+X_test = faces[test_idx]
+y_test = labels[test_idx]
+
+ss = StratifiedShuffleSplit(n_splits=1, test_size=80, random_state=43)
+train_idx, val_idx = next(ss.split(X_train_val, y_train_val))
+X_train = X_train_val[train_idx]
+y_train = y_train_val[train_idx]
+X_val = X_train_val[val_idx]
+y_val = y_train_val[val_idx]
+
+print(X_train.shape, y_train.shape)
+print(X_val.shape, y_val.shape)
+print(X_test.shape, y_test.shape)
+
+# cluster the images with k-means, ensuring there are a good number of clusters
+pca = PCA(n_components=0.99, svd_solver='full', random_state=42)
+X_train_reduced = pca.fit_transform(X_train)
+X_val_reduced = pca.transform(X_val)
+X_test_reduced = pca.transform(X_test)
+
+k_range = range(5, 150, 5)
+kmeans_per_k = []
+for k in k_range:
+    print(f"k={k}")
+    kmeans = KMeans(n_clusters=k, n_init='auto', random_state=42)
+    kmeans.fit(X_train_reduced)
+    kmeans_per_k.append(kmeans)
+
+silhouette_scores = [silhouette_score(X_train_reduced, model.labels_) for model in
+                     kmeans_per_k]
+best_idx = np.argmax(silhouette_scores)
+best_k = k_range[best_idx]
+print(best_k)
+best_score = silhouette_scores[best_idx]
+print(best_score)
+
+plt.plot(k_range, silhouette_scores, "bo-")
+plt.xlabel("$k$")
+plt.ylabel("Silhouette score")
+plt.plot(best_k, best_score, "rs")
+
+inertias = [model.inertia_ for model in kmeans_per_k]
+best_inertia = inertias[best_idx]
+print(best_inertia)
+
+plt.plot(k_range, inertias, "bo-")
+plt.xlabel("$k$")
+plt.ylabel("Inertia")
+plt.plot(best_k, best_inertia, "rs")
+
+# visualise the clusters
+best_model = kmeans_per_k[best_idx]
+
+def plot_faces(faces, labels, n_cols=5):
+    faces = faces.reshape(-1, 64, 64)
+    n_rows = (len(faces) - 1) // n_cols + 1
+    for idx, (face, label) in enumerate(zip(faces, labels)):
+        plt.subplot(n_rows, n_cols, idx+1)
+        plt.imshow(face, cmap="grey")
+        plt.axis("off")
+        plt.title(label)
+
+for clust_id in np.unique(best_model.labels_)[:5]:
+    print("Cluster", clust_id)
+    in_clust = best_model.labels_ == clust_id
+    faces = X_train[in_clust]
+    labels = X_train[in_clust]
+    plot_faces(faces, labels)
+
+
+#%% Exercise 11
+# train a classifier to predict which person is represented in each picture and evaluate
+# it on the validation set
+
+# use k-means as a dimensionality reduction tool and train a new classifier. Search for
+# the number of clusters that achieves the best performance
+
+# append the features from the reduced set to the original features and repeat the
+# exercise
+
+#%% Exercise 12
+# reduce the datasets dimensionality, preserving 99% of the variance, and then train a
+# Gaussian mixture model
+
+# use the model to generate some new faces and visualise them
+
+# modify some images and see if the model can detect the anomalies
+
+#%% Exercise 13
+# reduce the dataset's dimensionality, preserving 99% of the variance
+
+# compute the reconstruction error of each image
+
+# take some of the modified images from the previous exercise and calculate their
+# reconstruction error
+
+# plot a reconstructed image
+
+
+
+
 import os
 import pandas as pd
 import matplotlib.pyplot as plt

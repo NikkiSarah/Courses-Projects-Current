@@ -1,127 +1,110 @@
-# train a random forest classifier, timing how long it takes, and evaluate on the test set
-import numpy as np
+#%% Exercise 9
 from sklearn.datasets import fetch_openml
+from sklearn.model_selection import train_test_split
 import os
 import time
-import matplotlib.pyplot as plt
-
-from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.decomposition import PCA, LatentDirichletAllocation, NMF, TruncatedSVD
-from sklearn.manifold import *
+from sklearn.decomposition import PCA
+from sklearn.linear_model import SGDClassifier
 
-# check the backend and change if required
-import matplotlib as mpl
+# load the MNIST dataset and split it into a training, validation and test set
+mnist = fetch_openml('mnist_784', version=1, parser='auto')
+X, y = mnist.data / 255., mnist.target
 
-mpl_backend = mpl.get_backend()
-if mpl_backend != "Qt5Agg":
-    mpl.use("Qt5Agg")
-else:
-    pass
+X_train_val, X_test, y_train_val, y_test = train_test_split(
+    X, y, stratify=y, test_size=10000, random_state=42)
+X_train, X_val, y_train, y_val = train_test_split(
+    X_train_val, y_train_val, stratify=y_train_val, test_size=10000, random_state=42)
 
+# train a random forest classifier, time how long it takes and evaluate performance on the
+# test set
 n_cpu = os.cpu_count()
 print("Number of CPUs in the system:", n_cpu)
 
-mnist = fetch_openml('mnist_784', version=1, parser='auto')
-X, y = mnist.data, mnist.target
-
-X = X / 255.0
-y = y.astype(np.uint8)
-
-X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, stratify=y, train_size=60000)
-X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, stratify=y_train_val, train_size=50000)
-
 t0 = time.time()
-clf = RandomForestClassifier(random_state=42)
-clf.fit(X_train, y_train)
-print(time.time() - t0)
-print(clf.score(X_test, y_test))
-# the model with the raw data takes about 53.2 seconds to train and has a test set accuracy of 97.19
+rf_clf = RandomForestClassifier(n_jobs=n_cpu-2, random_state=42)
+rf_clf.fit(X_train, y_train)
+rf_time = time.time() - t0
+print(rf_time)
+# 11.77
+print(rf_clf.score(X_test, y_test))
+# 0.9677
 
-# use PCA to reduce the dimensionality with an explained variance of 95% and repeat
-pca = PCA(n_components=0.95)
-X_train_reduced = pca.fit_transform(X_train)
+# use PCA to reduce the dataset's dimensionality, with an explained variance ratio of 95%
+pca = PCA(n_components=0.95, svd_solver='full', random_state=42)
+X_train_reduced = pca.fit_transform(X_train, y_train)
 
+# train a new random forest classifier on the reduced dataset, time how long it takes. How
+# does performance compare to the previous classifier
 t0 = time.time()
-clf = RandomForestClassifier(random_state=42)
-clf.fit(X_train_reduced, y_train)
-print(time.time() - t0)
-
+rf_clf2 = RandomForestClassifier(n_jobs=n_cpu-2, random_state=42)
+rf_clf2.fit(X_train_reduced, y_train)
+rf2_time = time.time() - t0
+print(rf2_time)
+# 47.15
 X_test_reduced = pca.transform(X_test)
-print(clf.score(X_test_reduced, y_test))
-# the model with the reduced data takes about 215 seconds (much slower) to train and has a test set accuracy of 95.06
+print(rf_clf2.score(X_test_reduced, y_test))
+# 0.9424
 
-# use t-sne to reduce the dimensionality to 2 dimensions and plot the result
-# sub-sample 10,000 images to reduce computation time
-X, X_test, y, y_test = train_test_split(X_train_val, y_train_val, train_size=10000, stratify=y_train_val)
+# repeat the exercise with a SGDClassifier
+t0 = time.time()
+sgd_clf = SGDClassifier(n_jobs=n_cpu-2, random_state=42)
+sgd_clf.fit(X_train, y_train)
+sgd_time = time.time() - t0
+print(sgd_time)
+# 6.06
+print(sgd_clf.score(X_test, y_test))
+# 0.9045
+
+pca = PCA(n_components=0.95, svd_solver='full', random_state=42)
+X_train_reduced = pca.fit_transform(X_train, y_train)
 
 t0 = time.time()
-tsne = TSNE(n_components=2, n_jobs=n_cpu-2, random_state=42)
-X_reduced = tsne.fit_transform(X)
-print(time.time() - t0)
+sgd_clf2 = SGDClassifier(n_jobs=n_cpu-2, random_state=42)
+sgd_clf2.fit(X_train_reduced, y_train)
+sgd2_time = time.time() - t0
+print(sgd2_time)
+# 1.82
+X_test_reduced = pca.transform(X_test)
+print(sgd_clf2.score(X_test_reduced, y_test))
+# 0.9069
 
+#%% Exercise 10
+from sklearn.manifold import TSNE, LocallyLinearEmbedding, MDS
+import matplotlib.pyplot as plt
+import numpy as np
 
-def visualise_reduction(title, X_reduced=X_reduced, y=y):
-    plt.scatter(X_reduced[:, 0], X_reduced[:, 1], c=y, marker=".")
-    for i in range(len(np.unique(y))):
-        indices = (y == i)
-        center_x = np.mean(X_reduced[indices, 0])
-        center_y = np.mean(X_reduced[indices, 1])
-        plt.text(center_x, center_y, str(i), fontsize=20, ha='center', va='center', color='red', weight='bold')
-    plt.title(title, weight='bold', fontsize=25)
-    plt.axis('off')
+# use t-sne to reduce the first 5,000 images from MNIST down to 2 dimensions and plot the
+# result
+X_sub = X[:5000]
+y_sub = y[:5000]
+tsne = TSNE(random_state=42, n_jobs=n_cpu-2)
+X_tsne = tsne.fit_transform(X_sub)
 
+plt.scatter(X_tsne[:, 0], X_tsne[:, 1], c=y_sub.astype(np.int8), cmap="jet", alpha=0.5)
+plt.axis("off")
+plt.colorbar()
 
-visualise_reduction("T-Distributed Stochastic Neighbour Embedding (T-SNE)")
-
-# repeat with other techniques like PCA, LLE and MDS
-t0 = time.time()
-isomap = Isomap(n_components=2, n_jobs=n_cpu-2)
-X_reduced = isomap.fit_transform(X)
-print(time.time() - t0)
-visualise_reduction("Isometric Mapping")
-
-t0 = time.time()
-lle = LocallyLinearEmbedding(n_components=2, n_jobs=n_cpu-2, random_state=42)
-X_reduced = lle.fit_transform(X)
-print(time.time() - t0)
-visualise_reduction("Locally Linear Embedding")
-
-t0 = time.time()
-spectral = SpectralEmbedding(n_components=2, n_jobs=n_cpu-2, random_state=42)
-X_reduced = spectral.fit_transform(X)
-print(time.time() - t0)
-visualise_reduction("Spectral Embedding")
-
-# sub-sample 10,000 images to reduce computation time
-X_mds, X_test, y_mds, y_test = train_test_split(X_train_val, y_train_val, train_size=2000, stratify=y_train_val)
-
-t0 = time.time()
-mds = MDS(n_components=2, n_jobs=n_cpu-2, random_state=42, normalized_stress='auto')
-X_reduced = mds.fit_transform(X_mds)
-print(time.time() - t0)
-visualise_reduction("Multidimensional Scaling", X_reduced, y_mds)
-
-t0 = time.time()
+# repeat with other algorithms like PCA, LLE and MDS
 pca = PCA(n_components=2, random_state=42)
-X_reduced = pca.fit_transform(X)
-print(time.time() - t0)
-visualise_reduction("Principal Component Analysis")
+X_pca = pca.fit_transform(X_sub)
 
-t0 = time.time()
-lda = LatentDirichletAllocation(n_components=2, n_jobs=n_cpu-2, random_state=42)
-X_reduced = lda.fit_transform(X)
-print(time.time() - t0)
-visualise_reduction("Latent Dirichlet Allocation")
+plt.scatter(X_pca[:, 0], X_pca[:, 1], c=y_sub.astype(np.int8), cmap="jet", alpha=0.5)
+plt.axis("off")
+plt.colorbar()
 
-t0 = time.time()
-nmf = NMF(n_components=2, random_state=42)
-X_reduced = nmf.fit_transform(X)
-print(time.time() - t0)
-visualise_reduction("Non-Negative Matrix Factorisation")
 
-t0 = time.time()
-svd = TruncatedSVD(n_components=2, random_state=42)
-X_reduced = svd.fit_transform(X)
-print(time.time() - t0)
-visualise_reduction("Truncated Singular Value Decomposition aka Latent Semantic Analysis")
+lle = LocallyLinearEmbedding(random_state=42, n_jobs=n_cpu-2)
+X_lle = lle.fit_transform(X_sub)
+
+plt.scatter(X_lle[:, 0], X_lle[:, 1], c=y_sub.astype(np.int8), cmap="jet", alpha=0.5)
+plt.axis("off")
+plt.colorbar()
+
+
+mds = MDS(n_jobs=n_cpu-2, random_state=42, normalized_stress='auto')
+X_mds = mds.fit_transform(X_sub)
+
+plt.scatter(X_mds[:, 0], X_mds[:, 1], c=y_sub.astype(np.int8), cmap="jet", alpha=0.5)
+plt.axis("off")
+plt.colorbar()

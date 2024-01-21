@@ -1,79 +1,74 @@
-import pandas as pd
-import numpy as np
+#%% Exercise 1
+# build a MNIST classifier that achieves over 97% accuracy on the test set
 from sklearn.datasets import fetch_openml
+from sklearn.model_selection import train_test_split
+import os
 import time
-
-from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import accuracy_score
+from sklearn.neighbors import KNeighborsClassifier
+import pandas as pd
 
-from scipy.ndimage.interpolation import shift
-
-# build a MNIST classifier that achieves over 97% accuracy
-mnist = fetch_openml('mnist_784', version=1, parser='auto')
+mnist = fetch_openml('mnist_784', as_frame=False, parser='auto')
 X, y = mnist.data, mnist.target
 
-y = y.astype(np.uint8)
-
-X_train, X_test, y_train, y_test = X[:60000], X[60000:], y[:60000], y[60000:]
-
-clf = KNeighborsClassifier()
-clf.fit(X_train, y_train)
-predictions = clf.predict(X_test)
-clf_accuracy = accuracy_score(y_test, predictions)
-print(clf_accuracy)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.7,
+                                                    random_state=42, stratify=y)
 
 param_grid = [
-    {'n_neighbors': [1, 3, 5, 7, 9],
-     'weights': ['uniform', 'distance'],
-     'metric': ['cityblock', 'cosine', 'euclidean', 'haversine', 'minkowski']}
+    {'n_neighbors': [1, 3, 5],
+     'weights': ['uniform', 'distance']}
 ]
 
+n_cpu = os.cpu_count()
+print("Number of CPUs in the system:", n_cpu)
+
 t0 = time.time()
-grid_search = GridSearchCV(KNeighborsClassifier(), param_grid, n_jobs=-1, cv=3, verbose=1)
+grid_search = GridSearchCV(KNeighborsClassifier(), param_grid, scoring="accuracy",
+                           n_jobs=n_cpu-2, cv=3)
 grid_search.fit(X_train, y_train)
 run_time = time.time() - t0
-print(run_time) # about 25 minutes
 
-best_model_grid = grid_search.best_estimator_
-print(best_model_grid)
+print(run_time)
+print(grid_search.best_params_)
 
-best_score_grid = np.sqrt(-grid_search.best_score_)
-print(best_score_grid)
+cv_res = pd.DataFrame(grid_search.cv_results_)
+cv_res.sort_values(by="mean_test_score", ascending=False, inplace=True)
+grid_search_best_accuracy = grid_search.best_score_
+print(grid_search_best_accuracy)
 
-best_params_grid = grid_search.best_params_
-print(best_params_grid)
+best_estimator = grid_search.best_estimator_
+best_estimator.fit(X_train, y_train)
+test_accuracy = best_estimator.score(X_test, y_test)
+print(test_accuracy)
 
-results_grid = pd.DataFrame(grid_search.cv_results_)
-results_grid.sort_values(by='rank_test_score', inplace=True)
+#%% Exercise 2
+# create a function that can shift an MNIST image in any direction by 1 pixel
+from scipy.ndimage import shift
+import numpy as np
 
-
-# create a function that can shift an MNIST image in any direction, create 4 shifted copies of each image and assess
-# model performance on this augmented dataset
 def shift_image(image, vertical_shift, horizontal_shift):
     image = image.reshape((28, 28))
-    shifted_image = shift(image, [vertical_shift, horizontal_shift], cval=0, mode='constant')
+    shifted_image = shift(image, [vertical_shift, horizontal_shift])
     shifted_image = shifted_image.reshape([-1])
     return shifted_image
 
-
+# create 4 shifted copies (1 for each direction) for each image in the training set and
+# add them to the trainig set
 X_train_augmented = [image for image in X_train]
 y_train_augmented = [label for label in y_train]
 
-for vertical_shift, horizontal_shift in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-    for image, label in zip(X_train, y_train):
+for vertical_shift, horizontal_shift in ((1, 0), (0, 1), (-1, 0), (0, -1)):
+    for image, label in zip(X_train_augmented, y_train_augmented):
         X_train_augmented.append(shift_image(image, vertical_shift, horizontal_shift))
         y_train_augmented.append(label)
 
+# train the best model from the previous exercise on the augmented dataset
 X_train_augmented = np.array(X_train_augmented)
 y_train_augmented = np.array(y_train_augmented)
 
-shuffle_idx = np.random.permutation(len(X_train_augmented))
-X_train_augmented = X_train_augmented[shuffle_idx]
-y_train_augmented = y_train_augmented[shuffle_idx]
+clf = KNeighborsClassifier(n_neighbours=grid_search.best_params_["n_neighbors"],
+                           weights=grid_search.best_params_["weights"])
+clf.fit(X_train_augmented, y_train_augmented)
 
-clf2 = KNeighborsClassifier(**grid_search.best_params_)
-clf2.fit(X_train_augmented, y_train_augmented)
-predictions = clf2.predict(X_test)
-clf_accuracy = accuracy_score(y_test, predictions)
-print(clf_accuracy)
+test_accuracy_augmented = clf.score(X_test, y_test)
+print(test_accuracy_augmented)
