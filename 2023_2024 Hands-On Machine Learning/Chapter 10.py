@@ -380,11 +380,14 @@ bayesian_opt_tuner = kt.BayesianOptimization(
     alpha=1e-4, beta=2.6, overwrite=True, directory="./outputs/my_fashion_mnist",
     project_name="bayesian_opt")
 bayesian_opt_tuner.search(X_train, y_train, epochs=10, validation_data=(X_val, y_val),
-                          callbacks=[early_stopping_cb, tensorboard_cb])
+                          callbacks=[early_stopping_cb])
 
 #%% Coding Exercises: Exercise 10
 import tensorflow as tf
 import tensorflow.keras as tfk
+import numpy as np
+import matplotlib.pyplot as plt
+from pathlib import Path
 import keras_tuner as kt
 # train a deep MLP on the MNIST dataset
 # determine the optimal learning rate by growing it exponentially, plotting the loss and
@@ -406,12 +409,8 @@ class ExponentialLearningRate(tfk.callbacks.Callback):
         tfk.backend.set_value(self.model.optimizer.learning_rate,
                               self.model.optimizer.learning_rate * self.factor)
 
-
-
-
-
-y_train_ohe = tfk.utils.to_categorical(y_train)
-y_val_ohe = tfk.utils.to_categorical(y_val)
+np.random.seed(42)
+tf.random.set_seed(42)
 
 model = tfk.models.Sequential([
     tfk.layers.Flatten(input_shape=[28, 28]),
@@ -419,60 +418,25 @@ model = tfk.models.Sequential([
     tfk.layers.Dense(100, activation='relu'),
     tfk.layers.Dense(10, activation='softmax')
 ])
-model.compile(optimizer='SGD', loss='categorical_crossentropy',
-              metrics=['accuracy', tfk.metrics.Precision()])
+optimiser=tfk.optimizers.SGD(learning_rate=1e-3)
+model.compile(optimizer=optimiser, loss='sparse_categorical_crossentropy', 
+              metrics=['accuracy'])
+expon_lr = ExponentialLearningRate(factor=1.005)
 
-run_logdir = get_run_logdir()
-tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
-early_stopping_cb = tfk.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
-history = model.fit(X_train, y_train_ohe, epochs=100, validation_data=(X_val, y_val_ohe),
-                    callbacks=[tensorboard_cb, early_stopping_cb])
+history = model.fit(X_train, y_train, epochs=1, validation_data=(X_val, y_val),
+                    callbacks=[expon_lr])
 
-y_pred = np.argmax(model.predict(X_val), axis=1)
-val_accuracy = accuracy_score(y_val, y_pred)
-print(val_accuracy)
+plt.plot(expon_lr.rates, expon_lr.losses)
+plt.gca().set_xscale("log")
+plt.hlines(min(expon_lr.losses), min(expon_lr.rates), max(expon_lr.rates))
+plt.axis([min(expon_lr.rates), max(expon_lr.rates), 0, expon_lr.losses[0]])
+plt.xlabel("Learning rate")
+plt.ylabel("Loss")
 
-val_precision = precision_score(y_val, y_pred, average='micro')
-print(val_precision)
-
-
-model = tfk.models.Sequential([
-    tfk.layers.Flatten(input_shape=[28, 28]),
-    tfk.layers.Dense(300, activation='relu'),
-    tfk.layers.Dense(100, activation='relu'),
-    tfk.layers.Dense(10, activation='softmax')
-])
 
 tfk.backend.clear_session()
-
-def step_decay(epoch, lr):
-    if epoch < 1:
-        new_lr = lr
-        print(new_lr)
-        return lr
-    else:
-        new_lr = lr * tf.math.exp(1.005)
-        print(new_lr)
-        return new_lr
-
-
-lr_schedule_cb = tfk.optimizers.schedules.LearningRateScheduler(step_decay)
-model.compile(optimizer=tfk.optimizers.SGD(1e-5), loss='categorical_crossentropy',
-              metrics=['accuracy', tfk.metrics.Precision()])
-
-run_logdir = get_run_logdir()
-tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
-early_stopping_cb = tfk.callbacks.EarlyStopping(patience=5, restore_best_weights=True)
-model_checkpoint_cb = tfk.callbacks.ModelCheckpoint('./outputs/best_tf_model.keras',
-                                                save_best_only=True)
-history = model.fit(X_train, y_train_ohe, epochs=30, validation_data=(X_val, y_val_ohe),
-                    callbacks=[tensorboard_cb, lr_schedule_cb, early_stopping_cb,
-                               model_checkpoint_cb])
-
-best_model = tfk.saving.load_model('./outputs/best_tf_model.keras')
-optimiser = best_model.optimizer
-best_learning_rate = optimiser.learning_rate.numpy()
-print(best_learning_rate)
+np.random.seed(42)
+tf.random.set_seed(42)
 
 model = tfk.models.Sequential([
     tfk.layers.Flatten(input_shape=[28, 28]),
@@ -480,27 +444,73 @@ model = tfk.models.Sequential([
     tfk.layers.Dense(100, activation='relu'),
     tfk.layers.Dense(10, activation='softmax')
 ])
+optimiser=tfk.optimizers.SGD(learning_rate=3e-1)
+model.compile(optimizer=optimiser, loss='sparse_categorical_crossentropy', 
+              metrics=['accuracy'])
 
-tfk.backend.clear_session()
-model.compile(optimizer=tfk.optimizers.SGD(learning_rate=best_learning_rate),
-              loss='categorical_crossentropy',
-              metrics=['accuracy', tfk.metrics.Precision()])
+run_idx = 1
+run_logdir = Path() / "./logs/ch10_ex10_logs" / "run_{:03d}".format(run_idx)
+print(run_logdir)
 
-run_logdir = get_run_logdir()
+early_stopping_cb = tfk.callbacks.EarlyStopping(patience=20)
+checkpoint_cb = tfk.callbacks.ModelCheckpoint("./outputs/ch10_ex10_model",
+                                              save_best_only=True)
 tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
-early_stopping_cb = tfk.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
-model_checkpoint_cb = tfk.callbacks.ModelCheckpoint('./outputs/final_tf_model.keras',
-                                                save_best_only=True)
-history = model.fit(X_train, y_train_ohe, epochs=30, validation_data=(X_val, y_val_ohe),
-                    callbacks=[tensorboard_cb, early_stopping_cb, model_checkpoint_cb])
+history = model.fit(X_train, y_train, epochs=100, validation_data=(X_val, y_val),
+                    callbacks=[checkpoint_cb, early_stopping_cb, tensorboard_cb])
 
-final_model = tfk.saving.load_model('./outputs/final_tf_model.keras')
-y_pred = np.argmax(final_model.predict(X_test), axis=1)
-test_accuracy = accuracy_score(y_test, y_pred)
-print(test_accuracy)
-
-test_precision = precision_score(y_test, y_pred, average='micro')
-print(test_precision)
+model = tfk.models.load_model("./outputs/ch10_ex10_model")
+model.evaluate(X_test, y_test)
 
 # tune the hyperparameters using Keras Tuner with all the bells and whistles - save
 # checkpoints, use early stopping and plot learning curves with Tensorboard
+def build_model(hp):
+    n_hidden = hp.Int("n_hidden", min_value=0, max_value=8, default=2)
+    n_neurons = hp.Int("n_neurons", min_value=16, max_value=256)
+    learning_rate = hp.Float("learning_rate", min_value=1e-4, max_value=1,
+                             sampling="log")
+    optimiser = hp.Choice("optimiser", values=["SGD", "Adam"])
+    if optimiser == "SGD":
+        optimiser = tfk.optimizers.SGD(learning_rate=learning_rate)
+    else:
+        optimiser = tfk.optimizers.Adam(learning_rate=learning_rate)
+    
+    model = tfk.Sequential()
+    model.add(tfk.layers.Flatten())
+    for _ in range(n_hidden):
+        model.add(tfk.layers.Dense(n_neurons, activation="relu"))
+    model.add(tfk.layers.Dense(10, activation="softmax"))
+    model.compile(loss="sparse_categorical_crossentropy", optimizer=optimiser,
+                  metrics="accuracy")
+    return model
+
+tfk.backend.clear_session()
+np.random.seed(42)
+tf.random.set_seed(42)
+
+rnd_search_tuner = kt.RandomSearch(
+    build_model, objective="val_accuracy", max_trials=30, overwrite=True,
+    directory="./outputs/ch10_ex10_tuned_model", project_name="rnd_search", seed=42)
+
+root_logdir = Path(rnd_search_tuner.project_dir) / "tensorboard"
+tensorboard_cb = tfk.callbacks.TensorBoard(root_logdir)
+early_stopping_cb = tfk.callbacks.EarlyStopping(patience=10)
+checkpoint_cb = tfk.callbacks.ModelCheckpoint(
+    "./outputs/ch10_ex10_tuned_model/best_model", save_best_only=True)
+
+rnd_search_tuner.search(X_train, y_train, epochs=100, validation_data=(X_val, y_val),
+                        callbacks=[early_stopping_cb, checkpoint_cb, tensorboard_cb])
+
+top3_models = rnd_search_tuner.get_best_models(num_models=3)
+best_model = top3_models[0]
+
+top3_params = rnd_search_tuner.get_best_hyperparameters(num_trials=3)
+print(top3_params[0].values)
+
+best_trial = rnd_search_tuner.oracle.get_best_trials(num_trials=1)[0]
+print(best_trial.summary())
+print(best_trial.metrics.get_last_value("val_accuracy"))
+
+best_model.fit(X_train_val, y_train_val, epochs=10)
+test_loss, test_accuracy = best_model.evaluate(X_test, y_test)
+print(test_accuracy)
