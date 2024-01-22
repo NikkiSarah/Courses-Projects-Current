@@ -1,6 +1,6 @@
 #%% from biological to artifical neurons
-
 # the perceptron
+import numpy as np
 from sklearn.datasets import load_iris
 from sklearn.linear_model import Perceptron
 
@@ -23,10 +23,10 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 housing = fetch_california_housing()
-X_train_val, X_test, y_train_val, y_test = train_test_split(housing.data, housing.target,
-                                                            random_state=42)
-X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
-                                                  random_state=42)
+X_train_val, X_test, y_train_val, y_test = train_test_split(
+    housing.data, housing.target, random_state=42)
+X_train, X_val, y_train, y_val = train_test_split(
+    X_train_val, y_train_val, random_state=42)
 
 mlp_reg = MLPRegressor(hidden_layer_sizes=[50, 50, 50], random_state=42)
 pipeline = make_pipeline(StandardScaler(), mlp_reg)
@@ -41,10 +41,6 @@ import tensorflow as tf
 import tensorflow.keras as tfk
 import pandas as pd
 import matplotlib.pyplot as plt
-import numpy as np
-
-# import ssl
-# ssl._create_default_https_context = ssl._create_unverified_context
 
 fashion_mnist = tfk.datasets.fashion_mnist.load_data()
 (X_train_val, y_train_val), (X_test, y_test) = fashion_mnist
@@ -58,6 +54,7 @@ class_names = ['T-shirt/Top', 'Trousers', 'Sweater', 'Dress', 'Coat', 'Sandal', 
                'Sneakers', 'Bag', 'Boot']
 print(class_names[y_train[0]])
 
+tf.random.set_seed(42)
 model = tfk.models.Sequential()
 model.add(tfk.layers.Input(shape=[28, 28]))
 model.add(tfk.layers.Flatten())
@@ -92,6 +89,7 @@ history = model.fit(X_train, y_train, epochs=30, validation_data=(X_val, y_val))
 pd.DataFrame(history.history).plot(
     xlim=[0, 29], ylim=[0, 1], grid=True, xlabel="Epoch",
     style=["r--", "r--.", "b-", "b-*"])
+
 model.evaluate(X_test, y_test)
 
 X_new = X_test[:3]
@@ -107,14 +105,12 @@ print(y_new)
 # building a regression MLP using the sequential API
 from sklearn.datasets import fetch_california_housing
 from sklearn.model_selection import train_test_split
-import tensorflow as tf
-import tensorflow.keras as tfk
 
 housing = fetch_california_housing()
-X_train_val, X_test, y_train_val, y_test = train_test_split(housing.data, housing.target,
-                                                            random_state=42)
-X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
-                                                  random_state=42)
+X_train_val, X_test, y_train_val, y_test = train_test_split(
+    housing.data, housing.target, random_state=42)
+X_train, X_val, y_train, y_val = train_test_split(
+    X_train_val, y_train_val,random_state=42)
 
 tf.random.set_seed(42)
 norm_layer = tfk.layers.Normalization(input_shape=X_train.shape[1:])
@@ -131,20 +127,12 @@ norm_layer.adapt(X_train)
 history = model.fit(X_train, y_train, epochs=20, validation_data=(X_val, y_val))
 mse_test, rmse_test = model.evaluate(X_test, y_test)
 X_new = X_test[:3]
+print(X_new)
 y_pred = model.predict(X_new)
+print(y_pred)
 
 # building complex models using the functional API
-from sklearn.datasets import fetch_california_housing
-from sklearn.model_selection import train_test_split
-import tensorflow as tf
-import tensorflow.keras as tfk
-
-housing = fetch_california_housing()
-X_train_val, X_test, y_train_val, y_test = train_test_split(housing.data, housing.target,
-                                                            random_state=42)
-X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val,
-                                                  random_state=42)
-
+tfk.backend.clear_session()
 normalisation_layer = tfk.layers.Normalization()
 hidden_layer1 = tfk.layers.Dense(30, activation='relu')
 hidden_layer2 = tfk.layers.Dense(30, activation='relu')
@@ -224,8 +212,6 @@ y_pred = dict(zip(model.output_names, y_pred_tuple))
 print(y_pred)
 
 # using the subclassing API to build dynamic models
-import tensorflow.keras as tfk
-
 class WideAndDeepModel(tfk.Model):
     def __init__(self, units=30, activation='relu', **kwargs):
         super().__init__(**kwargs)
@@ -249,7 +235,7 @@ class WideAndDeepModel(tfk.Model):
 
 model = WideAndDeepModel(30, activation='relu', name='my_cool_model')
 
-optimizer = tfk.optimizers.Adam(learning_rate=1e-3)
+optimiser = tfk.optimizers.Adam(learning_rate=1e-3)
 model.compile(loss="mse", loss_weights=[0.9, 0.1], optimizer=optimiser,
               metrics=["RootMeanSquaredError"])
 model.norm_layer_wide.adapt(X_train_wide)
@@ -264,143 +250,165 @@ y_pred_main, y_pred_aux = model.predict((X_new_wide, X_new_deep))
 # saving and restoring a model
 model.save('./outputs/my_keras_model', save_format='tf')
 
-model = tfk.models.load_model('my_keras_model')
+model = tfk.models.load_model('./outputs/my_keras_model')
 y_pred_main, y_pred_aux = model.predict((X_new_wide, X_new_deep))
 
-
-(X_train_val, y_train_val), (X_test, y_test) = fashion_mnist.load_data()
-X_val, X_train = X_train_val[:5000] / 255.0, X_train_val[5000:] / 255.0
-y_val, y_train = y_train_val[:5000], y_train_val[5000:]
-
-model = tfk.models.Sequential([
-    tfk.layers.Flatten(input_shape=[28, 28]),
-    tfk.layers.Dense(300, activation='relu'),
-    tfk.layers.Dense(100, activation='relu'),
-    tfk.layers.Dense(10, activation='softmax')
-])
-model.compile(loss='sparse_categorical_crossentropy', optimizer='SGD',
-              metrics=['accuracy'])
-history = model.fit(X_train, y_train, epochs=30, validation_data=(X_val, y_val))
-
-model.save('./outputs/my_tf_model.keras')
-model = tfk.saving.load_model('./outputs/my_tf_model.keras')
-
 # using callbacks
-checkpoint_cb = tfk.callbacks.ModelCheckpoint('./outputs/my_tf_model.keras')
-history = model.fit(X_train, y_train, epochs=10, callbacks=[checkpoint_cb])
-
-checkpoint_cb = tfk.callbacks.ModelCheckpoint('./outputs/my_tf_model.keras',
-                                          save_best_only=True)
-history = model.fit(X_train, y_train, epochs=10, validation_data=(X_val, y_val),
+checkpoint_cb = tfk.callbacks.ModelCheckpoint('./outputs/my_checkpoints',
+                                              save_weights_only=True)
+history = model.fit((X_train_wide, X_train_deep), (y_train, y_train), epochs=10,
+                    validation_data=((X_val_wide, X_val_deep), (y_val, y_val)),
                     callbacks=[checkpoint_cb])
-model = tfk.saving.load_model('./outputs/my_tf_model.keras')
 
 early_stopping_cb = tfk.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
-history = model.fit(X_train, y_train, epochs=100, validation_data=(X_val, y_val),
+history = model.fit((X_train_wide, X_train_deep), (y_train, y_train), epochs=10,
+                    validation_data=((X_val_wide, X_val_deep), (y_val, y_val)),
                     callbacks=[checkpoint_cb, early_stopping_cb])
-model = tfk.saving.load_model('./outputs/my_tf_model.keras')
 
-
-class PrintValTrainRatioCallback(tfk.Callback):
-    def on_epoch_end(self, epoch, logs=None):
-        print("\nval/train: {:.2f}".format(logs["val_loss"] / logs["loss"]))
-
+class PrintValTrainRatioCallback(tfk.callbacks.Callback):
+    def on_epoch_end(self, epoch, logs):
+        ratio = logs["val_loss"] / logs["loss"]
+        print(f"Epoch={epoch}, val/train={ratio:.2f}")
 
 # %% using tensorboard for visualisation
-import os
-import tensorflow.summary as tfs
+from pathlib import Path
+from time import strftime
 
-root_logdir = './logs'
-print(root_logdir)
-
-
-def get_run_logdir():
-    import time
-    run_id = time.strftime("run_%Y_%m_%d-%H_%M_%S")
-    return os.path.join(root_logdir, run_id)
-
+def get_run_logdir(root_logdir="./logs/my_logs"):
+    return Path(root_logdir) / strftime("run_%Y_%m_%d-%H_%M_%S")
 
 run_logdir = get_run_logdir()
-tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir)
-history = model.fit(X_train, y_train, epochs=30, validation_data=(X_val, y_val),
+
+tensorboard_cb = tfk.callbacks.TensorBoard(run_logdir, profile_batch=(100, 200))
+history = model.fit((X_train_wide, X_train_deep), (y_train, y_train), epochs=10,
+                    validation_data=((X_val_wide, X_val_deep), (y_val, y_val)),
                     callbacks=[tensorboard_cb])
 
-
 test_logdir = get_run_logdir()
-writer = tfs.create_file_writer(test_logdir)
+writer = tf.summary.create_file_writer(str(test_logdir))
 with writer.as_default():
-    for step in range(1, 1000+1):
-        tfs.scalar("my_scalar", np.sin(step / 10), step=step)
+    for step in range(1, 1000 + 1):
+        tf.summary.scalar("my_scalar", np.sin(step / 10), step=step)
+        
         data = (np.random.randn(100) + 2) * step / 100
-        tfs.histogram("my_hist", data, buckets=50, step=step)
+        tf.summary.histogram("my_hist", data, buckets=50, step=step)
+        
         images = np.random.randn(2, 32, 32, 3)
-        tfs.image("my_images", images * step / 1000, step=step)
-        texts = ["The step is ", str(step), "It's square is " + str(step**2)]
-        tfs.text("my_text", texts, step=step)
+        tf.summary.image("my_images", images * step / 1000, step=step)
+        
+        texts = ["The step is ", str(step), "It'\s square is " + str(step**2)]
+        tf.summary.text("my_text", texts, step=step)
+        
         sine_wave = tf.math.sin(tf.range(12000) / 48000 * 2 * np.pi * step)
         audio = tf.reshape(tf.cast(sine_wave, tf.float32), [1, -1, 1])
-        tfs.audio("my_audio", audio, sample_rate=48000, step=step)
+        tf.summary.audio("my_audio", audio, sample_rate=48000, step=step)
 
 # %% fine-tuning neural network hyperparameters
-from scikeras.wrappers import KerasRegressor
-from scipy.stats import reciprocal
-from sklearn.model_selection import RandomizedSearchCV
+import keras_tuner as kt
 
-housing = fetch_california_housing()
-X_train_val, X_test, y_train_val, y_test = train_test_split(housing.data, housing.target)
-X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val)
+fashion_mnist = tfk.datasets.fashion_mnist.load_data()
+(X_train_val, y_train_val), (X_test, y_test) = fashion_mnist
+X_train, y_train = X_train_val[:-5000], y_train_val[:-5000]
+X_val, y_val = X_train_val[-5000:], y_train_val[-5000:]
 
-scaler = StandardScaler()
-X_train = scaler.fit_transform(X_train)
-X_val = scaler.transform(X_val)
-X_test = scaler.transform(X_test)
+X_train, X_val, X_test = X_train / 255., X_val / 255., X_test / 255.
+class_names = ['T-shirt/Top', 'Trousers', 'Sweater', 'Dress', 'Coat', 'Sandal', 'Shirt',
+               'Sneakers', 'Bag', 'Boot']
 
-
-def build_model(n_hidden=1, n_neurons=30, learning_rate=3e-3, input_shape=[8]):
-    model = tfk.models.Sequential()
-    model.add(tfk.layers.InputLayer(input_shape=input_shape))
-    for layer in range(n_hidden):
-        model.add(tfk.layers.Dense(n_neurons, activation='relu'))
-    model.add(tfk.layers.Dense(1))
-    optimiser = tfk.optimizers.SGD(learning_rate=learning_rate)
-    model.compile(loss="mse", optimizer=optimiser)
+def build_model(hp):
+    n_hidden = hp.Int("n_hidden", min_value=0, max_value=8, default=2)
+    n_neurons = hp.Int("n_neurons", min_value=16, max_value=256)
+    learning_rate = hp.Float("learning_rate", min_value=1e-4, max_value=1e-2,
+                             sampling="log")
+    optimiser = hp.Choice("optimiser", values=["SGD", "Adam"])
+    if optimiser == "SGD":
+        optimiser = tfk.optimizers.SGD(learning_rate=learning_rate)
+    else:
+        optimiser = tfk.optimizers.Adam(learning_rate=learning_rate)
+    
+    model = tfk.Sequential()
+    model.add(tfk.layers.Flatten())
+    for _ in range(n_hidden):
+        model.add(tfk.layers.Dense(n_neurons, activation="relu"))
+    model.add(tfk.layers.Dense(10, activation="softmax"))
+    model.compile(loss="sparse_categorical_crossentropy", optimizer=optimiser,
+                  metrics="accuracy")
     return model
 
+rnd_search_tuner = kt.RandomSearch(
+    build_model, objective="val_accuracy", max_trials=5, overwrite=True,
+    directory="./outputs/my_fashion_mnist", project_name="my_rnd_search", seed=42)
+rnd_search_tuner.search(X_train, y_train, epochs=10, validation_data=(X_val, y_val))
 
-tf_reg = KerasRegressor(build_model, n_hidden=3)
-tf_reg.fit(X_train, y_train, epochs=100, validation_data=(X_val, y_val),
-           callbacks=[tfk.callbacks.EarlyStopping(patience=10)])
-mse_test = tf_reg.score(X_test, y_test)
+top3_models = rnd_search_tuner.get_best_models(num_models=3)
+best_model = top3_models[0]
 
-X_new = X_test[:3]
-y_pred = tf_reg.predict(X_new)
+top3_params = rnd_search_tuner.get_best_hyperparameters(num_trials=3)
+print(top3_params[0].values)
 
-param_distribs = {
-    "n_hidden": [0, 1, 2, 3],
-    "n_neurons": np.arange(1, 100),
-    "learning_rate": reciprocal(3e-4, 3e-2)
-}
+best_trial = rnd_search_tuner.oracle.get_best_trials(num_trials=1)[0]
+print(best_trial.summary())
+print(best_trial.metrics.get_last_value("val_accuracy"))
 
-tf_reg = KerasRegressor(build_fn=build_model)
-rnd_search_cv = RandomizedSearchCV(tf_reg, param_distribs, n_iter=10, cv=3)
-rnd_search_cv.fit(X_train, y_train)
-rnd_search_cv.best_params_
-rnd_search_cv.best_score_
+best_model.fit(X_train_val, y_train_val, epochs=10)
+test_loss, test_accuracy = best_model.evaluate(X_test, y_test)
+print(test_accuracy)
 
-model = rnd_search_cv.best_estimator_.model
+class MyClassificationHyperModel(kt.HyperModel):
+    def build(self, hp):
+        return build_model(hp)
+    
+    def fit(self, hp, model, X, y, **kwargs):
+        if hp.Boolean("normalise"):
+            norm_layer = tfk.layers.Normalization()
+            X = norm_layer(X)
+        return model.fit(X, y, **kwargs)
+    
+hyperband_tuner = kt.Hyperband(MyClassificationHyperModel(), objective="val_accuracy",
+                               seed=42, max_epochs=10, factor=3, hyperband_iterations=2,
+                               overwrite=True, directory="./outputs/my_fashion_mnist",
+                               project_name="hyperband")
 
-# %% coding exercises
-# train a deep MLP
-# import ssl
-from sklearn.metrics import accuracy_score, precision_score
+root_logdir = Path(hyperband_tuner.project_dir) / "tensorboard"
+tensorboard_cb = tfk.callbacks.TensorBoard(root_logdir)
+early_stopping_cb = tfk.callbacks.EarlyStopping(patience=2)
+hyperband_tuner.search(X_train, y_train, epochs=10, validation_data=(X_val, y_val),
+                       callbacks=[early_stopping_cb, tensorboard_cb])
 
-# ssl._create_default_https_context = ssl._create_unverified_context
-fashion_mnist = tfk.datasets.fashion_mnist
-(X_train_val, y_train_val), (X_test, y_test) = fashion_mnist.load_data()
+bayesian_opt_tuner = kt.BayesianOptimization(
+    MyClassificationHyperModel(), objective="val_accuracy", seed=42, max_trials=10,
+    alpha=1e-4, beta=2.6, overwrite=True, directory="./outputs/my_fashion_mnist",
+    project_name="bayesian_opt")
+bayesian_opt_tuner.search(X_train, y_train, epochs=10, validation_data=(X_val, y_val),
+                          callbacks=[early_stopping_cb, tensorboard_cb])
 
-X_train_val = X_train_val.reshape((60000, 28, 28, 1)) / 255.0
-X_val, X_train = X_train_val[:5000], X_train_val[5000:]
+#%% Coding Exercises: Exercise 10
+import tensorflow as tf
+import tensorflow.keras as tfk
+import keras_tuner as kt
+# train a deep MLP on the MNIST dataset
+# determine the optimal learning rate by growing it exponentially, plotting the loss and
+# finding where the loss shoots up
+(X_train_val, y_train_val), (X_test, y_test) = tfk.datasets.mnist.load_data()
+
+X_val, X_train = X_train_val[:5000] / 255., X_train_val[5000:] / 255.
 y_val, y_train = y_train_val[:5000], y_train_val[5000:]
+X_test = X_test / 255.
+
+class ExponentialLearningRate(tfk.callbacks.Callback):
+    def __init__(self, factor):
+        self.factor = factor
+        self.rates = []
+        self.losses = []
+    def on_batch_end(self, batch, logs):
+        self.rates.append(tfk.backend.get_value(self.model.optimizer.learning_rate))
+        self.losses.append(logs["loss"])
+        tfk.backend.set_value(self.model.optimizer.learning_rate,
+                              self.model.optimizer.learning_rate * self.factor)
+
+
+
+
 
 y_train_ohe = tfk.utils.to_categorical(y_train)
 y_val_ohe = tfk.utils.to_categorical(y_val)
@@ -428,7 +436,6 @@ val_precision = precision_score(y_val, y_pred, average='micro')
 print(val_precision)
 
 
-# determine the optimal learning rate using an exponential increase
 model = tfk.models.Sequential([
     tfk.layers.Flatten(input_shape=[28, 28]),
     tfk.layers.Dense(300, activation='relu'),
@@ -494,3 +501,6 @@ print(test_accuracy)
 
 test_precision = precision_score(y_test, y_pred, average='micro')
 print(test_precision)
+
+# tune the hyperparameters using Keras Tuner with all the bells and whistles - save
+# checkpoints, use early stopping and plot learning curves with Tensorboard
