@@ -449,7 +449,7 @@ model.compile(optimizer=optimiser, loss='sparse_categorical_crossentropy',
               metrics=['accuracy'])
 
 run_idx = 1
-run_logdir = Path() / "./logs/ch10_ex10_logs" / "run_{:03d}".format(run_idx)
+run_logdir = Path() / "./logs/ch10_ex10" / "run_{:03d}".format(run_idx)
 print(run_logdir)
 
 early_stopping_cb = tfk.callbacks.EarlyStopping(patience=20)
@@ -489,7 +489,7 @@ np.random.seed(42)
 tf.random.set_seed(42)
 
 rnd_search_tuner = kt.RandomSearch(
-    build_model, objective="val_accuracy", max_trials=30, overwrite=True,
+    build_model, objective="val_accuracy", max_trials=15, overwrite=True,
     directory="./outputs/ch10_ex10_tuned_model", project_name="rnd_search", seed=42)
 
 root_logdir = Path(rnd_search_tuner.project_dir) / "tensorboard"
@@ -511,6 +511,6 @@ best_trial = rnd_search_tuner.oracle.get_best_trials(num_trials=1)[0]
 print(best_trial.summary())
 print(best_trial.metrics.get_last_value("val_accuracy"))
 
-best_model.fit(X_train_val, y_train_val, epochs=10)
+best_model.fit(X_train_val, y_train_val, epochs=20)
 test_loss, test_accuracy = best_model.evaluate(X_test, y_test)
 print(test_accuracy)
