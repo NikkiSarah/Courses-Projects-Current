@@ -257,8 +257,9 @@ dense = tfk.layers.Dense(100, activation='relu', kernel_initializer='he_normal',
 #%% Coding Exercises: Exercise 8
 import tensorflow as tf
 import tensorflow.keras as tfk
-import time
 import os
+import numpy as np
+import math
 import matplotlib.pyplot as plt
 
 # build a DNN with 20 hidden layers of 100 neurons each. Use He initialisation and the
@@ -404,19 +405,39 @@ for lr in [1e-3, 1e-4, 1e-5, 1e-6]:
                       metrics=['accuracy'])
         model.fit(X_train_scaled, y_train, epochs=20, callbacks=callback_list,
                   validation_data=(X_val_scaled, y_val))
-# the best model had a learning rate of 1e-3 and dropout of . It was able to achieve a
-# validation accuracy of 0.4877 after 20 epochs and took 3.17 minutes to train.
+# the best model had a learning rate of 1e-3 and dropout of 0.1. It was able to achieve a
+# validation accuracy of 0.4771 after 20 epochs and took 5.83 minutes to train.
+
 
 # without retraining the model, see if there is better performance with MC Dropout
+tfk.backend.clear_session()
+model = tfk.Sequential()
+model.add(tfk.layers.Flatten(input_shape=[32, 32, 3]))
+for _ in range(20):
+    model.add(tfk.layers.Dense(100, activation="selu", kernel_initializer="lecun_normal"))
+model.add(tfk.layers.AlphaDropout(rate=0.1))
+model.add(tfk.layers.Dense(10, activation="softmax"))
+
+optimiser = tfk.optimizers.experimental.Nadam(learning_rate=1e-3)
+
+earlystopping_cb = tfk.callbacks.EarlyStopping(patience=10, restore_best_weights=True)
+model.compile(loss='sparse_categorical_crossentropy', optimizer=optimiser,
+              metrics=['accuracy'])
+model.fit(X_train_scaled, y_train, epochs=20, callbacks=earlystopping_cb,
+          validation_data=(X_val_scaled, y_val))
+model.evaluate(X_val_scaled, y_val)
+
 class MCAlphaDropout(tfk.layers.AlphaDropout):
     def call(self, inputs):
         return super().call(inputs, training=True)
     
 mc_model = tfk.Sequential([
-    (MCAlphaDropout(layer.rate)
-     if isinstance(layer, tfk.layers.AlphaDropout)
-     else layer)
-    for layer in model.layer
+    (
+        MCAlphaDropout(layer.rate)
+        if isinstance(layer, tfk.layers.AlphaDropout)
+        else layer
+    )
+    for layer in model.layers
 ])
 
 def mc_dropout_predict_probas(mc_model, X, n_samples=10):
@@ -453,19 +474,19 @@ class ExponentialLearningRate(tfk.callbacks.Callback):
         self.factor = factor
         self.rates = []
         self.losses = []
-    
+
     def on_epoch_begin(self, epoch, logs=None):
         self.sum_of_epoch_losses = 0
-    
+
     def on_batch_end(self, batch, logs=None):
-        mean_epoch_loss = logs["loss"]
+        mean_epoch_loss = logs["loss"]  # the epoch's mean loss so far 
         new_sum_of_epoch_losses = mean_epoch_loss * (batch + 1)
         batch_loss = new_sum_of_epoch_losses - self.sum_of_epoch_losses
         self.sum_of_epoch_losses = new_sum_of_epoch_losses
         self.rates.append(tfk.backend.get_value(self.model.optimizer.learning_rate))
         self.losses.append(batch_loss)
         tfk.backend.set_value(self.model.optimizer.learning_rate,
-                              self.model.optimizer.learning_rate * self.factor)
+                    self.model.optimizer.learning_rate * self.factor)
 
 def find_learning_rate(model, X, y, epochs=1, batch_size=32, min_rate=1e-4, max_rate=1):
     init_weights = model.get_weights()
@@ -479,9 +500,9 @@ def find_learning_rate(model, X, y, epochs=1, batch_size=32, min_rate=1e-4, max_
     model.set_weights(init_weights)
     return exp_lr.rates, exp_lr.losses
 
-def plot_lr_vs_losses(rates, losses):
+def plot_lr_vs_loss(rates, losses):
     plt.plot(rates, losses, "b")
-    plt.gca().set_xscale("log")
+    plt.gca().set_xscale('log')
     max_loss = losses[0] + min(losses)
     plt.hlines(min(losses), min(rates), max(rates), color="k")
     plt.axis([min(rates), max(rates), 0, max_loss])
@@ -491,7 +512,7 @@ def plot_lr_vs_losses(rates, losses):
 rates, losses = find_learning_rate(model, X_train_scaled, y_train, epochs=1,
                                    batch_size=128)
 
-plt_lr_vs_losses(rates, losses)
+plot_lr_vs_loss(rates, losses)
 
 tfk.backend.clear_session()
 model = tfk.Sequential()
@@ -502,13 +523,13 @@ for _ in range(20):
 model.add(tfk.layers.AlphaDropout(rate=0.1))
 model.add(tfk.layers.Dense(10, activation="softmax"))
 
-optimiser = tfk.optimizers.experimental.Nadam(learning_rate=0.001)
+optimiser = tfk.optimizers.experimental.Nadam(learning_rate=2e-2)
 model.compile(loss='sparse_categorical_crossentropy', optimizer=optimiser,
               metrics=['accuracy'])
 
 class OneCycleScheduler(tfk.callbacks.Callback):
-    def __init__(self, iterations, max_lr=1e-3, start_lr=None, last_iterations=None,
-                 last_lr = None):
+    def __init__(self, iterations, max_lr=1e-3, start_lr=None,
+                 last_iterations=None, last_lr=None):
         self.iterations = iterations
         self.max_lr = max_lr
         self.start_lr = start_lr or max_lr / 10
@@ -516,10 +537,10 @@ class OneCycleScheduler(tfk.callbacks.Callback):
         self.half_iteration = (iterations - self.last_iterations) // 2
         self.last_lr = last_lr or self.start_lr / 1000
         self.iteration = 0
-    
+
     def _interpolate(self, iter1, iter2, lr1, lr2):
         return (lr2 - lr1) * (self.iteration - iter1) / (iter2 - iter1) + lr1
-    
+
     def on_batch_begin(self, batch, logs):
         if self.iteration < self.half_iteration:
             lr = self._interpolate(0, self.half_iteration, self.start_lr, self.max_lr)
@@ -527,15 +548,14 @@ class OneCycleScheduler(tfk.callbacks.Callback):
             lr = self._interpolate(self.half_iteration, 2 * self.half_iteration,
                                    self.max_lr, self.start_lr)
         else:
-            lr = self._interpolate((2 * self.half_iteration, self.iterations,
-                                    self.start_lr, self.last_lr)
+            lr = self._interpolate(2 * self.half_iteration, self.iterations,
+                                   self.start_lr, self.last_lr)
         self.iteration += 1
         tfk.backend.set_value(self.model.optimizer.learning_rate, lr)
 
-batch_size = 128
 n_epochs = 20
+batch_size = 128
 n_iterations = math.ceil(len(X_train_scaled) / batch_size) * n_epochs
 onecycle = OneCycleScheduler(n_iterations, max_lr=0.05)
-
-model.fit(X_train_scaled, y_train, epochs=n_epochs, batch_size=batch_size,
-          validation_data=(X_val_scaled, y_val), callbacks=[onecycle])
+history = model.fit(X_train_scaled, y_train, epochs=n_epochs, batch_size=batch_size,
+                    validation_data=(X_val_scaled, y_val), callbacks=[onecycle])
