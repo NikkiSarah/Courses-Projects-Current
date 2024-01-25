@@ -433,9 +433,9 @@ class LayerNormalisation(tfk.layers.Layer):
 #   beta with zeros
     def build(self, batch_input_shape):
         self.alpha = self.add_weight(name="alpha", shape=batch_input_shape[-1:],
-                                     dtype=np.float32, initializer="ones")
+                                     initializer="ones")
         self.beta = self.add_weight(name="beta", shape=batch_input_shape[-1:],
-                                    dtype=np.float32, initializer="zeros")
+                                    initializer="zeros")
 
 # - the call() method should compute the mean and standard devision of each instance's
 #   features. You can use tf.nn.moments(inputs, axes=-1, keepdims=True), which returns
