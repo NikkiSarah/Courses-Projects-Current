@@ -1,14 +1,11 @@
+#%% using tensorflow like numpy
 import tensorflow as tf
 import numpy as np
 import tensorflow.keras as tfk
 
-# %% using tensorflow like numpy
-
 # tensors and operations
-tf.constant([[1., 2., 3.], [4., 5., 6.]])
-print(tf.constant(42))
-
 t = tf.constant([[1., 2., 3.], [4., 5., 6.]])
+print(t)
 print(t.shape)
 print(t.dtype)
 
@@ -18,6 +15,8 @@ print(t[..., 1, tf.newaxis])
 print(t + 10)
 print(tf.square(t))
 print(t @ tf.transpose(t))
+
+print(tf.constant(42))
 
 # tensors and numpy
 a = np.array([2., 4., 5.])
@@ -43,6 +42,9 @@ print(v[:, 2].assign([0., 1.]))
 print(v.scatter_nd_update(indices=[[0, 0], [1, 2]], updates=[100., 200.]))
 
 #%% customising models and training algorithms
+from sklearn.datasets import fetch_california_housing
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
 # custom loss functions
 # Huber is now a defined loss function in tensorflow: from tfk.losses.Huber /
@@ -54,11 +56,48 @@ def huber_fn(y_true, y_pred):
     linear_loss = tf.abs(error) - 0.5
     return tf.where(is_small_error, squared_loss, linear_loss)
 
-model.compile(loss=huber_fn, optimizer='Nadam', metrics='mae')
-model.fit(X_train, y_train, [...])
+housing = fetch_california_housing()
+X_train_val, X_test, y_train_val, y_test = train_test_split(
+    housing.data, housing.target.reshape(-1, 1), random_state=42)
+X_train, X_val, y_train, y_val = train_test_split(
+    X_train_val, y_train_val, random_state=42)
+
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_val_scaled = scaler.transform(X_val)
+X_test_scaled = scaler.transform(X_test)
+
+input_shape = X_train.shape[1:]
+
+tf.keras.utils.set_random_seed(42)
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(30, activation="relu", kernel_initializer="he_normal",
+                          input_shape=input_shape),
+    tf.keras.layers.Dense(1),
+])
+
+model.compile(loss=huber_fn, optimizer='nadam')
+model.fit(X_train, y_train, epochs=2, validation_data=(X_val, y_val))
 
 # saving and loading models with custom components
-model = tfk.models.load_model("my_model_with_a_custom_loss_threshold_2.keras",
+model.save("./outputs/my_model_with_a_custom_loss")
+model = tfk.models.load_model("./outputs/my_model_with_a_custom_loss",
+                              custom_objects={"huber_fn", huber_fn})
+
+def create_huber(threshold=1.0):
+    def huber_fn(y_true, y_pred):
+        error = y_true - y_pred
+        is_small_error = tf.abs(error) < 1
+        squared_loss = tf.square(error) / 2
+        linear_loss = tf.abs(error) - 0.5
+        return tf.where(is_small_error, squared_loss, linear_loss)
+    return huber_fn
+
+model.compile(loss=create_huber(2.0), optimizer="nadam")
+model.fit(X_train, y_train, epochs=2, validation_data=(X_val, y_val))
+
+model.save("./outputs/my_model_with_a_custom_loss_threshold_2")
+model = tfk.models.load_model("./outputs/my_model_with_a_custom_loss_threshold_2",
                               custom_objects={"huber_fn": create_huber(2.0)})
 
 class HuberLoss(tfk.losses.Loss):
@@ -77,21 +116,26 @@ class HuberLoss(tfk.losses.Loss):
         base_config = super().get_config()
         return {**base_config, "threshold": self.threshold}
 
-
 model.compile(loss=HuberLoss(2.), optimizer="nadam")
-model = tfk.models.load_model("my_model_with_a_custom_loss_class.keras",
+model.fit(X_train, y_train, epochs=2, validation_data=(X_val, y_val))
+
+model.save("./outputs/my_model_with_a_custom_loss_class")
+model = tfk.models.load_model("./outputs/my_model_with_a_custom_loss_class",
                               custom_objects={"HuberLoss": HuberLoss})
 
 # custom activation functions, initialisers, regularisers and constraints
 def my_softplus(z):
     return tf.math.log(tf.exp(z) + 1.0)
 
+
 def my_glorot_initaliser(shape, dtype=tf.float32):
     stddev = tf.sqrt(2. / (shape[0] + shape[1]))
     return tf.random.normal(shape, stddev=stddev, dtype=dtype)
 
+
 def my_l1_regulariser(weights):
     return tf.reduce_sum(tf.abs(0.01 * weights))
+
 
 def my_positive_weights(weights):
     return tf.where(weights < 0., tf.zeros_like(weights), weights)
@@ -100,7 +144,6 @@ layer = tfk.layers.Dense(30, activation=my_softplus,
                          kernel_initializer=my_glorot_initaliser,
                          kernel_regularizer=my_l1_regulariser,
                          kernel_constraint=my_positive_weights)
-
 
 class MyL1Regulariser(tfk.regularizers.Regularizer):
     def __init__(self, factor):
@@ -155,15 +198,12 @@ class MyDense(tfk.layers.Layer):
     def build(self, batch_input_shape):
         self.kernel = self.add_weight(name="kernel",
                                       shape=[batch_input_shape[-1], self.units],
-                                      initializer="he_normal")
+                                      initializer="glorot_normal")
         self.bias = self.add_weight(name="bias", shape=[self.units], initializer="zeros")
         super().build(batch_input_shape)
         
     def call(self, X):
         return self.activation(X @ self.kernel + self.bias)
-    
-    def compute_output_shape(self, batch_input_shape):
-        return tf.TensorShape(batch_input_shape.as_list()[:-1] + [self.units])
     
     def get_config(self):
         base_config = super().get_config()
@@ -174,11 +214,7 @@ class MyDense(tfk.layers.Layer):
 class MyMultiLayer(tfk.layers.Layer):
     def call(self, X):
         X1, X2 = X
-        return [X1 + X2, X1 * X2, X1 / X2]
-    
-    def compute_output_shape(self, batch_input_shape):
-        b1, b2 = batch_input_shape
-        return [b1, b1, b1]
+        return X1 + X2, X1 * X2, X1 / X2
 
 
 class MyGaussianNoise(tfk.layers.Layer):
@@ -186,15 +222,12 @@ class MyGaussianNoise(tfk.layers.Layer):
         super().__init__(**kwargs)
         self.stddev = stddev
     
-    def call(self, X, training=None):
+    def call(self, X, training=False):
         if training:
             noise = tf.random.normal(tf.shape(X), stddev=self.stddev)
             return X + noise
         else:
             return X
-    
-    def compute_output_shape(self, batch_input_shape):
-        return batch_input_shape
 
 
 # custom models
@@ -228,13 +261,12 @@ class ResidualRegressor(tfk.Model):
         Z - self.block2(Z)
         return self.out(Z)
 
-
 # losses and metrics based on model internals
 class ReconstructingRegressor(tfk.Model):
     def __init__(self, output_dim, **kwargs):
         super().__init__(**kwargs)
-        self.hidden = [tfk.layers.Dense(30, activation="selu",
-                                        kernel_initializer="lecun_normal")
+        self.hidden = [tfk.layers.Dense(30, activation="relu",
+                                        kernel_initializer="he_normal")
                        for _ in range(5)]
         self.out = tfk.layers.Dense(output_dim)
         self.reconstruction_mean = tfk.metrics.Mean(name="reconstruction_error")
@@ -254,7 +286,6 @@ class ReconstructingRegressor(tfk.Model):
             result = self.reconstruction_mean(recon_loss)
             self.add_metric(result)
         return self.out(Z)
-
 
 # computing gradients using autodiff
 def f(w1, w2):
@@ -277,46 +308,49 @@ with tf.GradientTape() as tape:
     z = f(w1, w2)
 dz_dw1 = tape.gradient(z, w1)
 dz_dw2 = tape.gradient(z, w2)
-
-with tf.GradientTape(persistent=True) as tape:
-    z = f(w1, w2)
-dz_dq1 = tape.gradient(z, w1)
-dz_dw2 = tape.gradient(z, w2)
-del tape
+print(dz_dw1)
+print(dz_dw2)
 
 c1, c2 = tf.constant(5.), tf.constant(3.)
 with tf.GradientTape() as tape:
     z = f(c1, c2)
 gradients = tape.gradient(z, [c1, c2])
+print(gradients)
 
 with tf.GradientTape() as tape:
     tape.watch(c1)
     tape.watch(c2)
     z = f(c1, c2)
 gradients = tape.gradient(z, [c1, c2])
+print(gradients)
 
 def f(w1, w2):
     return 3 * w1**2 + tf.stop_gradient(2 * w1 * w2)
 with tf.GradientTape() as tape:
     z = f(w1, w2)
 gradients = tape.gradient(z, [w1, w2])
+print(gradients)
 
-x = tf.Variable([100.])
+x = tf.Variable([1e-50])
 with tf.GradientTape() as tape:
-    z = my_softplus(x)
+    z = tf.sqrt(x)
 tape.gradient(z, [x])
 
+def my_softplus(z):
+    return tf.math.log(1 + tf.exp(-tf.abs(z))) + tf.maximum(0., z)
+
 @tf.custom_gradient
-def my_better_softplus(z):
-    exp = tf.exp(z)
-    def my_softplus_gradients(grad):
-        return grad / (1 + 1 / exp)
-    return tf.math.log(exp + 1), my_softplus_gradients
+def my_softplus(z):
+    def my_softplus_gradients(grads):
+        return grads * (1 - 1 / (1 + tf.exp(z)))
+    
+    result = tf.math.log(1 + tf.exp(-tf.abs(z))) + tf.maximum(0., z)    
+    return result, my_softplus_gradients
     
 # custom training loops
 l2_reg = tfk.regularizers.l2(0.05)
 model = tfk.models.Sequential([
-    tfk.layers.Dense(30, activation="elu", kernel_initializer="he_normal",
+    tfk.layers.Dense(30, activation="relu", kernel_initializer="he_normal",
                      kernel_regularizer=l2_reg),
     tfk.layers.Dense(1, kernel_regularizer=l2_reg)
     ])    
@@ -325,42 +359,42 @@ def random_batch(X, y, batch_size=32):
     idx = np.random.randint(len(X), size=batch_size)
     return X[idx], y[idx]
 
-def print_status_bar(iteration, total, loss, metrics=None):
+
+def print_status_bar(step, total, loss, metrics=None):
     metrics = " - ".join([f"{m.name}: {m.result():.4f}"
                           for m in [loss] + (metrics or [])])
-    end = "" if iteration < total else "\n"
-    print(f"\r{iteration}/{total} - " + metrics, end=end)
+    end = "" if step < total else "\n"
+    print(f"\r{step}/{total} - " + metrics, end=end)
 
 n_epochs = 5
 batch_size = 32
 n_steps = len(X_train) // batch_size
-optimiser = tfk.optimizers.Nadam(learning_rate=0.01)
+optimiser = tfk.optimizers.SGD(learning_rate=0.01)
 loss_fn = tfk.losses.mean_squared_error
-mean_loss = tfk.metrics.Mean()
+mean_loss = tfk.metrics.Mean(name="mean_loss")
 metrics = [tfk.metrics.MeanAbsoluteError()]
 
 for epoch in range(1, n_epochs + 1):
-    print(f"Epoch {epoch}/{n_epochs}")
+    print("Epoch {}/{}".format(epoch, n_epochs))
     for step in range(1, n_steps + 1):
         X_batch, y_batch = random_batch(X_train_scaled, y_train)
         with tf.GradientTape() as tape:
             y_pred = model(X_batch, training=True)
             main_loss = tf.reduce_mean(loss_fn(y_batch, y_pred))
-            loss = tf.add_n([main_loss] + model_losses)
+            loss = tf.add_n([main_loss] + model.losses)
+        
         gradients = tape.gradient(loss, model.trainable_variables)
         optimiser.apply_gradients(zip(gradients, model.trainable_variables))
-        for variable in model.variables:
-            if variable.constraint is not None:
-                variable.assign(variable.constraint(variable))
         mean_loss(loss)
         for metric in metrics:
             metric(y_batch, y_pred)
-        print_status_bar(step * batch_size, len(y_train), mean_loss, metrics)
+
+        print_status_bar(step, n_steps, mean_loss, metrics)
+        
         for metric in [mean_loss] + metrics:
             metric.reset_states()
     
-# %% tensorflow functions and graphs
-
+#%% tensorflow functions and graphs
 def cube(x):
     return x**3
 
@@ -379,7 +413,7 @@ def tf_cube(X):
 
 print(tf_cube.python_function(2))
 
-# %% coding exercises
+#%% Coding Exercises: Exercise 12
 import tensorflow as tf
 import tensorflow.keras as tfk
 from sklearn.datasets import fetch_california_housing
