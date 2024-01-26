@@ -176,8 +176,8 @@ class HuberMetric(tfk.metrics.Metric):
         
     def update_state(self, y_true, y_pred, sample_weight=None):
         metric = self.huber_fn(y_true, y_pred)
-        self.total_assign_add = tf.reduce_sum(metric)
-        self.count_assign_add(tf.cast(tf.size(y_true), tf.float32))
+        self.total.assign_add = tf.reduce_sum(metric)
+        self.count.assign_add(tf.cast(tf.size(y_true), tf.float32))
         
     def result(self):
         return self.total / self.count
@@ -200,7 +200,6 @@ class MyDense(tfk.layers.Layer):
                                       shape=[batch_input_shape[-1], self.units],
                                       initializer="glorot_normal")
         self.bias = self.add_weight(name="bias", shape=[self.units], initializer="zeros")
-        super().build(batch_input_shape)
         
     def call(self, X):
         return self.activation(X @ self.kernel + self.bias)
@@ -339,6 +338,7 @@ tape.gradient(z, [x])
 def my_softplus(z):
     return tf.math.log(1 + tf.exp(-tf.abs(z))) + tf.maximum(0., z)
 
+
 @tf.custom_gradient
 def my_softplus(z):
     def my_softplus_gradients(grads):
@@ -393,7 +393,33 @@ for epoch in range(1, n_epochs + 1):
         
         for metric in [mean_loss] + metrics:
             metric.reset_states()
-    
+
+
+for epoch in range(1, n_epochs + 1):
+    print("Epoch {}/{}".format(epoch, n_epochs))
+    for step in range(1, n_steps + 1):
+        X_batch, y_batch = random_batch(X_train_scaled, y_train)
+        with tf.GradientTape() as tape:
+            y_pred = model(X_batch, training=True)
+            main_loss = tf.reduce_mean(loss_fn(y_batch, y_pred))
+            loss = tf.add_n([main_loss] + model.losses)
+        
+        gradients = tape.gradient(loss, model.trainable_variables)
+        optimiser.apply_gradients(zip(gradients, model.trainable_variables))
+        
+        for variable in model.variables:
+            if variable.constraint is not None:
+                variable.assign(variable.constraint(variable))
+        
+        mean_loss(loss)
+        for metric in metrics:
+            metric(y_batch, y_pred)
+
+        print_status_bar(step, n_steps, mean_loss, metrics)
+        
+        for metric in [mean_loss] + metrics:
+            metric.reset_states()
+
 #%% tensorflow functions and graphs
 def cube(x):
     return x**3
@@ -428,20 +454,20 @@ class LayerNormalisation(tfk.layers.Layer):
         super().__init__(**kwargs)
         self.eps = eps
 
-# - the build() method should define two trainable weights alpha and beta, both of shape
-#   input_shape[-1:] and data type tf.float32. Alpha should be initialised with 1s and
-#   beta with zeros
+# the build() method should define two trainable weights alpha and beta, both of shape
+# input_shape[-1:] and data type tf.float32. Alpha should be initialised with 1s and beta
+# with zeros
     def build(self, batch_input_shape):
         self.alpha = self.add_weight(name="alpha", shape=batch_input_shape[-1:],
                                      initializer="ones")
         self.beta = self.add_weight(name="beta", shape=batch_input_shape[-1:],
                                     initializer="zeros")
 
-# - the call() method should compute the mean and standard devision of each instance's
-#   features. You can use tf.nn.moments(inputs, axes=-1, keepdims=True), which returns
-#   the mean and variance of all instances. Then the function should compute and return
-#   alpha*(X - mean) / (stddev + epsilon), where epsilon is a small constant to avoid
-#   division by zero
+# the call() method should compute the mean and standard devision of each instance's
+# features. You can use tf.nn.moments(inputs, axes=-1, keepdims=True), which returns the
+# mean and variance of all instances. Then the function should compute and return
+# alpha*(X - mean) / (stddev + epsilon), where epsilon is a small constant to avoid
+# division by zero
     def call(self, X):
         mean, variance = tf.nn.moments(X, axes=-1, keepdims=True)
         return self.alpha * (X - mean) / (tf.sqrt(variance + self.eps)) + self.beta
@@ -450,7 +476,7 @@ class LayerNormalisation(tfk.layers.Layer):
         base_config = super().get_config()
         return {**base_config, "eps": self.eps}
 
-# - ensure that the custom layer produces similar output as tfk.layers.LayerNormalization
+# ensure that the custom layer produces similar output as tfk.layers.LayerNormalization
 housing = fetch_california_housing()
 X_train_val, X_test, y_train_val, y_test = train_test_split(
     housing.data, housing.target.reshape(-1, 1), random_state=42)
@@ -469,14 +495,10 @@ tf_layer_norm = tfk.layers.LayerNormalization()
 print(tf.reduce_mean(tfk.losses.mean_absolute_error(tf_layer_norm(X),
                                                     custom_layer_norm(X))))
 
+#%% Coding Exercises: Exercise 13
 # train a model using a custom training loop on the Fashion MNIST dataset
-import ssl
-ssl._create_default_https_context = ssl._create_unverified_context
-
 fashion_mnist = tfk.datasets.fashion_mnist
 (X_train_val, y_train_val), (X_test, y_test) = fashion_mnist.load_data()
-print(X_train_val.shape)
-print(X_train_val.dtype)
 
 X_val, X_train = X_train_val[:5000] / 255.0, X_train_val[5000:] / 255.0
 y_val, y_train = y_train_val[:5000], y_train_val[5000:]
@@ -489,14 +511,14 @@ model = tfk.Sequential([
     tfk.layers.Dense(10, activation="softmax"),
 ])
 
-# - display the epoch, iteration, mean training loss and mean accuracy over each epoch,
-#   and the validation loss and accuracy at the end of each epoch
+# display the epoch, iteration, mean training loss and mean accuracy over each epoch, and
+# the validation loss and accuracy at the end of each epoch
 def random_batch(X, y, batch_size=32):
     idx = np.random.randint(len(X), size=batch_size)
     return X[idx], y[idx]
 
 def print_status_bar(iteration, total, loss, metrics=None):
-    metrics = " - ".join([f"{m.name}: {m.result():.4f}"
+    metrics = " - ".join([f"{m.name}: {m.result():.4f}" 
                           for m in [loss] + (metrics or [])])
     end = "" if iteration < total else "\n"
     print(f"\r{iteration}/{total} - " + metrics, end=end)
@@ -515,7 +537,7 @@ for epoch in range(1, n_epochs+1):
     for step in range(1, n_iter+1):
         X_batch, y_batch = random_batch(X_train, y_train)
         with tf.GradientTape() as tape:
-            y_pred = model(X_batch)
+            y_pred = model(X_batch, training=True)
             main_loss = tf.reduce_mean(loss_fn(y_batch, y_pred))
             loss = tf.add_n([main_loss] + model.losses)
             
@@ -546,8 +568,8 @@ for epoch in range(1, n_epochs+1):
     for metric in [mean_loss] + metrics:
         metric.reset_states()
 
-# - try using a different optimiser with a different learning rate for the upper and
-#   lower layers
+# try using a different optimiser with a different learning rate for the upper and lower
+# layers
 tfk.utils.set_random_seed(42)
 
 lower_layers = tfk.Sequential([
@@ -577,7 +599,7 @@ for epoch in range(1, n_epochs+1):
     for step in range(1, n_iter+1):
         X_batch, y_batch = random_batch(X_train, y_train)
         with tf.GradientTape(persistent=True) as tape:
-            y_pred = model(X_batch)
+            y_pred = model(X_batch, training=True)
             main_loss = tf.reduce_mean(loss_fn(y_batch, y_pred))
             loss = tf.add_n([main_loss] + model.losses)
         
