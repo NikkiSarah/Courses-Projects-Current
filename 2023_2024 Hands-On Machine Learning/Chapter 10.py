@@ -449,7 +449,7 @@ model.compile(optimizer=optimiser, loss='sparse_categorical_crossentropy',
               metrics=['accuracy'])
 
 run_idx = 1
-run_logdir = Path() / "./logs/ch10_ex10" / "run_{:03d}".format(run_idx)
+run_logdir = Path() / "./logs/ch10_ex10_run_{:03d}".format(run_idx)
 print(run_logdir)
 
 early_stopping_cb = tfk.callbacks.EarlyStopping(patience=20)
