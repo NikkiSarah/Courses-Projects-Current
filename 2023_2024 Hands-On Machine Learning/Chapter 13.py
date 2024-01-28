@@ -558,24 +558,104 @@ history = model.fit(train_set2, validation_data=val_set2, epochs=10,
 model.evaluate(val_set2)
 
 #%% Coding Exercises: Exercise 10
+import tensorflow.keras as tfk
+import os
+import shutil
+from pathlib import Path
+import numpy as np
+import tensorflow as tf
+import tensorflow_datasets as tfds
+
 # download the Large Movie Review dataset. The data is contained in two directories:
 # train and test, each containing a pos sub-directory with 12,500 positive reviews and a
 # neg sub-directory containing 12,500 negative reviews. Each review is stored in a
 # separate text file
+filename = "aclImdb_v1.tar.gz"
+filepath = "https://ai.stanford.edu/~amaas/data/sentiment/aclImdb_v1.tar.gz"
+dataset = tfk.utils.get_file(filename, filepath, extract=True, cache_dir="~/./datasets")
 
-# - split the dataset into a validation set (15,000 reviews) and a test set
-#   (10,000 reviews)
+source_dir = "E:/tmp/.keras/datasets/"
+target_dir = "./datasets"
+os.makedirs(target_dir, exist_ok=True)
+for file in os.listdir("E:/tmp/.keras/datasets/"):
+    source_path = os.path.join(source_dir, file)
+    target_path = os.path.join(target_dir, file)
+    shutil.move(source_path, target_path)
+    
+def get_review_paths(train_test, pos_neg, root_dir="./datasets/aclImdb"):
+    return [str(path) for path in Path(root_dir, train_test, pos_neg).glob("*.txt")]
 
-# - use tf.data to create an efficient datset for each set
+train_pos = get_review_paths("train", "pos")
+train_neg = get_review_paths("train", "neg")
+test_val_pos = get_review_paths("test", "pos")
+test_val_neg = get_review_paths("test", "neg")
 
-# - create a binary classification model using a TextVectorization layer to preprocess
-#   each review
+print(len(train_pos), len(train_neg))
+print(len(test_val_pos), len(test_val_neg))
 
-# - add an embedding layer and compute the mean embedding for each review, multiplied by
-#   the square root of the number of words. The rescaled mean embedding can then be
-#   passed to the rest of the model
+# split the test set into a validation set (15,000 reviews) and a test set (10,000
+# reviews)
+np.random.shuffle(test_val_pos)
+val_pos = test_val_pos[:7500]
+test_pos = test_val_pos[7500:]
 
-# - train the model and observe the accuracy. Try to optimise the pipelines to make
-#   training as fast as possible
+np.random.shuffle(test_val_neg)
+val_neg = test_val_neg[:7500]
+test_neg = test_val_neg[7500:]
 
-# - use TFDS to load the same dataset more easily: rfds.load("imdb_reviews")
+# use tf.data to create an efficient datset for each set
+def create_dataset(neg_filepaths, pos_filepaths):
+    reviews = []
+    labels = []
+    for filepaths, label in ((neg_filepaths, 0), (pos_filepaths, 1)):
+        for filepath in filepaths:
+            with open(filepath, encoding="utf-8") as review_file:
+                reviews.append(review_file.read())
+            labels.append(label)
+            
+    combined_data = list(zip(reviews, labels))
+    np.random.shuffle(combined_data)
+            
+    dataset = tf.data.Dataset.from_tensor_slices(
+        (tf.constant([review for review, _ in combined_data]),
+         tf.constant([label for _, label in combined_data])))
+    return dataset
+
+train_set = create_dataset(train_neg, train_pos).batch(32).prefetch(1)
+val_set = create_dataset(val_neg, val_pos).batch(32).prefetch(1)
+test_set = create_dataset(test_neg, test_pos).batch(32).prefetch(1)
+
+for X, y in test_set:
+    print(y)
+    print()
+
+# create a binary classification model using a TextVectorization layer to preprocess each
+# review
+MAX_FEATURES = 1000
+text_vec_layer = tfk.layers.TextVectorization(max_tokens=MAX_FEATURES,
+                                              output_mode="tf_idf")
+
+def map_dataset(dataset):
+    reviews = dataset.map(lambda review, label: review)
+    return reviews
+
+train_reviews = map_dataset(train_set)
+val_reviews = map_dataset(val_set)
+test_reviews = map_dataset(test_set)
+
+text_vec_layer.adapt(train_reviews)
+
+tf.random.set_seed(42)
+tfk.backend.clear_session()
+model = tfk.models.Sequential()
+model.add(text_vec_layer)
+model.add(tfk.layers.Dense(100, activation="relu"))
+model.add(tfk.layers.Dense(1, activation="sigmoid"))
+model.summary()
+
+model.compile(loss="binary_crossentropy", optimizer="nadam", metrics=["accuracy"])
+model.fit(train_set, epochs=10, validation_data=val_set)
+
+# use TFDS to load the same dataset more easily: tfds.load("imdb_reviews")
+datasets = tfds.load(name="imdb_reviews")
+imdb_train, imdb_test = datasets["train"], datasets["test"]
