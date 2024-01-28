@@ -250,6 +250,7 @@ model.summary()
 model.evaluate(X_val, y_val)
 
 #%% Coding Exercises: Exercise 10
+# this section requires a GPU (or training is VERY slow)
 import os
 import shutil
 from sklearn.model_selection import train_test_split
@@ -259,6 +260,8 @@ from tensorflow.train import Example, Features, Feature, BytesList, Int64List
 from tensorflow.data import TFRecordDataset
 import matplotlib.pyplot as plt
 import tensorflow.keras as tfk
+import numpy as np
+import pandas as pd
 
 # create a training set containing at least 100 images per class. You can classify your
 # own pictures or use a dataset from tensorflow datasets
@@ -447,6 +450,7 @@ for X_batch, y_batch in val_set.take(1):
 #     num_classes = len(np.unique(y_batch))
 num_classes = len(class_names)
 
+tfk.backend.clear_session()
 tf.random.set_seed(42)
 base_model = tfk.applications.efficientnet_v2.EfficientNetV2S(
     weights="imagenet", include_top=False)
@@ -460,7 +464,33 @@ for layer in base_model.layers:
 optimiser = tfk.optimizers.Nadam(learning_rate=0.01)
 model.compile(loss="sparse_categorical_crossentropy", optimizer=optimiser,
               metrics=["accuracy"])
-history = model.fit(train_set, validation_data=val_set, epochs=10)
+history = model.fit(train_set, validation_data=val_set, epochs=20)
 
-for idxs in zip(range(33)):
+def plot_fit_history(fit_history):
+    history_df = pd.DataFrame(fit_history.history)
+    fig, axs = plt.subplots(2, 1, sharex=True)
+    history_df[["loss", "val_loss"]].plot(ax=axs[0], style=["b-", "g--."])
+    history_df[["accuracy", "val_accuracy"]].plot(ax=axs[1], style=["b-", "g--."])
     
+plot_fit_history(history)
+
+for layer in base_model.layers[-101:]:
+    layer.trainable = True
+
+optimiser = tfk.optimizers.Nadam(learning_rate=0.001)
+model.compile(loss="sparse_categorical_crossentropy", optimizer=optimiser,
+              metrics=["accuracy"])
+
+reduce_lr_cb = tfk.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.3, verbose=1,
+                                               patience=2, min_lr=1e-8)
+early_stopping_cb = tfk.callbacks.EarlyStopping(monitor="val_loss", patience=5,
+                                                restore_best_weights=True)
+history = model.fit(train_set, validation_data=val_set, epochs=30,
+                    callbacks=[reduce_lr_cb, early_stopping_cb])
+
+history_df = pd.DataFrame(history.history)
+fig, axs = plt.subplots(2, 1, sharex=True)
+history_df[["loss", "val_loss"]].plot(ax=axs[0], style=["b-", "g--."])
+history_df[["accuracy", "val_accuracy"]].plot(ax=axs[1], style=["b-", "g--."])
+
+plot_fit_history(history)
