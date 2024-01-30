@@ -1,4 +1,4 @@
-_#%% convolutional layers
+#%% convolutional layers
 from sklearn.datasets import load_sample_images
 import tensorflow.keras as tfk
 
