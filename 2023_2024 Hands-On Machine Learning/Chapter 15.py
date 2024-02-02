@@ -365,14 +365,17 @@ fit_and_evaluate_model(conv_rnn_model, downsampled_train, downsampled_val,
 
 
 #%% Coding Exercises: Exercise 9
+import tensorflow.keras as tfk
 
 # train a classification model for the SketchRNN dataset
 tf_download_root = "http://download.tensorflow.org/data/"
 filename = "quickdraw_tutorial_dataset_v1.tar.gz"
-filepath = tf.keras.utils.get_file(filename,
-                                   tf_download_root + filename,
-                                   cache_dir=".",
-                                   extract=True)
+filepath = tfk.utils.get_file(filename,
+                              tf_download_root + filename,
+                              cache_dir=".",
+                              extract=True)
+
+
 
 
 
