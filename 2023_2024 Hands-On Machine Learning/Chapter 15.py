@@ -366,6 +366,12 @@ fit_and_evaluate_model(conv_rnn_model, downsampled_train, downsampled_val,
 
 #%% Coding Exercises: Exercise 9
 import tensorflow.keras as tfk
+import os
+from pathlib import Path
+import tensorflow as tf
+from tensorflow.data import TFRecordDataset
+import matplotlib.pyplot as plt
+import numpy as np
 
 # train a classification model for the SketchRNN dataset
 tf_download_root = "http://download.tensorflow.org/data/"
@@ -375,16 +381,298 @@ filepath = tfk.utils.get_file(filename,
                               cache_dir=".",
                               extract=True)
 
+root_dir = "./datasets/quickdraw"
+print(root_dir)
+
+with open(os.path.join(root_dir, "eval.tfrecord.classes")) as class_file:
+    val_classes = class_file.readlines()
+
+with open(os.path.join(root_dir, "training.tfrecord.classes")) as class_file:
+    train_classes = class_file.readlines()
+
+assert train_classes == val_classes
+
+classes = [name.strip().lower() for name in train_classes]
+print(len(classes))
+
+train_paths = [str(path) for path in Path(root_dir).glob("training.tfrecord-*")][:5]
+val_paths = [str(path) for path in Path(root_dir).glob("eval.tfrecord-*")][:5]
+
+def parse_examples(data_batch):
+    feature_descriptions = {
+        "ink": tf.io.VarLenFeature(dtype=tf.float32),
+        "shape": tf.io.FixedLenFeature(shape=[2], dtype=tf.int64),
+        "class_index": tf.io.FixedLenFeature(shape=[1], dtype=tf.int64)
+    }
+    examples = tf.io.parse_example(data_batch, feature_descriptions)
+    
+    flat_sketches = tf.sparse.to_dense(examples["ink"])
+    sketches = tf.reshape(flat_sketches, shape=[tf.shape(data_batch)[0], -1, 3])
+    lengths = examples["shape"][:, 0]
+    labels = examples["class_index"][:, 0]
+    
+    return sketches, lengths, labels
 
 
+def quickdraw_dataset(filepaths, batch_size=32, shuffle_buffer_size=None,
+                      n_parse_threads=5, n_read_threads=5, cache=False):
+    dataset = TFRecordDataset(filepaths, num_parallel_reads=n_read_threads)
+    if cache:
+        dataset = dataset.cache()
+    if shuffle_buffer_size:
+        dataset = dataset.shuffle(shuffle_buffer_size)
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.map(parse_examples, num_parallel_calls=n_parse_threads)
+    return dataset.prefetch(1)
+
+train_set = quickdraw_dataset(train_paths, shuffle_buffer_size=10000)
+val_set = quickdraw_dataset(val_paths)
+
+for sketches, lengths, labels in train_set.take(1):
+    print(sketches)
+    print('-----')
+    print(lengths)
+    print('-----')
+    print(labels)
+
+def draw_sketch(sketch, label=None, color='gray'):
+    origin = np.array([[0., 0., 0.]])
+    sketch = np.r_[origin, sketch]
+    stroke_end_indices = np.argwhere(sketch[:, -1] == 1.)[:, 0]
+    coordinates = sketch[:, :2].cumsum(axis=0)
+    strokes = np.split(coordinates, stroke_end_indices + 1)
+    title = classes[label.numpy()]
+    plt.title(title)
+    for stroke in strokes:
+        plt.plot(stroke[:, 0], -stroke[:, 1], ".-", color=color)
+    plt.axis("off")
+
+def draw_sketches(sketches, lengths, labels):
+    n_cols = 3
+    n_rows = n_cols
+    for idx in range(n_cols * n_rows):
+        sketch, length, label = sketches[idx], lengths[idx], labels[idx]
+        plt.subplot(n_rows, n_cols, idx+1)
+        draw_sketch(sketch[:length], label=label)
+    plt.show()
+
+for sketches, lengths, labels in train_set.take(1):
+    draw_sketches(sketches, lengths, labels)
+
+# check the distribution of lengths
+num_train_batches = len(list(train_set))
+num_val_batches = len(list(val_set))
+
+sketch_lengths = np.concatenate([lengths for _, lengths, _ in
+                                 train_set.take(num_train_batches)])
+plt.hist(sketch_lengths, bins=150, density=True)
+plt.axis([0, 200, 0, 0.021])
+plt.xlabel("length")
+plt.ylabel("density")
+
+def crop_long_sketches(dataset, max_length=100):
+    cropped_dataset = dataset.map(lambda sketches, lengths, labels:
+                                  (sketches[:, :max_length], labels))
+    return cropped_dataset
+
+cropped_train_set = crop_long_sketches(train_set)
+cropped_val_set = crop_long_sketches(val_set)
+
+num_conv_layers = 3
+conv_filters = [48, 64, 96]
+conv_kernels = [5, 5, 3]
+num_rnn_layers = 3
+batch_normalisation = False
+lr = 0.0001
+gradient_cv = 9.0
+optimiser = [tfk.optimizers.Adam(learning_rate=lr, clipvalue=gradient_cv),
+             tfk.optimizers.AdamW(learning_rate=lr, clipvalue=gradient_cv),
+             tfk.optimizers.experimental.Nadam(learning_rate=lr, clipvalue=gradient_cv)]
+num_epochs = 5
+
+tfk.backend.clear_session()
+tf.random.set_seed(42)
+model = tfk.Sequential()
+for i in range(num_conv_layers):
+    model.add(tfk.layers.Conv1D(filters=conv_filters[i],kernel_size=conv_kernels[i],
+                                activation="swish", strides=1, padding="same"))
+    if batch_normalisation is True:
+        model.add(tfk.layers.BatchNormalization())
+    else:
+        model.add(tfk.layers.Dropout(0.3))
+for i in range(num_rnn_layers-1):
+    model.add(tfk.layers.LSTM(128, return_sequences=True, return_state=True))
+model.add(tfk.layers.LSTM(128))
+model.add(tfk.layers.Dense(len(classes), activation="softmax"))
+
+model.compile(optimizer=optimiser[0], loss="sparse_categorical_crossentropy",
+              metrics=["accuracy", "sparse_top_k_categorical_accuracy"])
+
+history = model.fit(cropped_train_set, epochs=num_epochs, verbose=2, 
+                    validation_data=cropped_val_set)
+
+model.summary()
+
+def plot_fit_history(fit_history):
+    history_df = pd.DataFrame(fit_history.history)
+    fig, axs = plt.subplots(2, 1, sharex=True)
+    history_df[["loss", "val_loss"]].plot(ax=axs[0], style=["b-", "g--."])
+    history_df[["accuracy", "val_accuracy"]].plot(ax=axs[1], style=["b-", "g--."])
+    
+plot_fit_history(history)
+
+y_test = np.concatenate([labels for _, _, labels in val_set])
+y_probas = model.predict(val_set)
+
+print(np.mean(tfk.metrics.sparse_top_k_categorical_accuracy(y_test, y_probas)))
+
+n_new = 10
+y_probas = model.predict(sketches)
+top_k = tf.nn.top_k(y_probas, k=5)
+for index in range(n_new):
+    draw_sketch(sketches[index])
+    print("Top-5 predictions:".format(index + 1))
+    for k in range(5):
+        class_ = classes[top_k.indices[index, k]]
+        proba = 100 * top_k.values[index, k]
+        print("  {}. {} {:.3f}%".format(k + 1, class_, proba))
+    print("Answer: {}".format(classes[labels[index].numpy()]))
 
 
 #%% Coding Exercises: Exercise 10
+import tensorflow.keras as tfk
+import tarfile
+import os
+from pathlib import Path
+import pandas as pd
+import numpy as np
+import random
+from music21 import meter, note, stream, tempo
+from pygame import mixer
+import tensorflow as tf
 
 # download the Bach chorales datset and unzip it
+tf_download_root = "https://github.com/ageron/data/raw/main/"
+filename = "jsb_chorales.tgz"
+# filepath = tfk.utils.get_file(filename,
+#                               tf_download_root + filename,
+#                               cache_dir=".",
+#                               extract=True)
 
+def extract_tgz(tgz_file, target_dir):
+    with tarfile.open(tgz_file, 'r:gz') as f:
+        f.extractall(target_dir)
+
+extract_tgz(os.path.join('./datasets', filename), './datasets')
+
+root_dir = './datasets/jsb_chorales'
+print(root_dir)
+
+paths_train = sorted([str(path) for path in Path(root_dir).glob("train/chorale_*")])
+paths_val = sorted([str(path) for path in Path(root_dir).glob("valid/chorale_*")])
+paths_test = sorted([str(path) for path in Path(root_dir).glob("test/chorale_*")])
+
+def load_chorales(filepaths):
+    return [pd.read_csv(path_).values.tolist() for path_ in filepaths]
+
+chorales_train_raw = load_chorales(paths_train)
+chorales_val_raw = load_chorales(paths_val)
+chorales_test_raw = load_chorales(paths_test)
+
+
+def select_chorale(chorale_set, shorter_chorales=False, num_chords=None):
+    if shorter_chorales:
+        chorale_lengths = [len(chorale) for chorale in chorale_set]
+        shorter_chorales = [chorale for chorale in chorale_set
+                            if len(chorale) < np.median(chorale_lengths)]
+   
+        chorale_idx = random.randint(0, len(shorter_chorales) - 1)
+        chorale = shorter_chorales[chorale_idx]
+    else:
+        chorale_idx = random.randint(0, len(chorale_set) - 1)
+        chorale = chorale_set[chorale_idx]
+    
+    if num_chords is not None:
+        chorale = chorale[:num_chords]
+    
+    chorale_stream = stream.Score()
+    chorale_part = stream.Part()
+    chorale_stream.append(chorale_part)
+    chorale_notes = [note.Note(chorale_note) for chord in chorale
+                    for chorale_note in chord]
+    chorale_part.append(chorale_notes)
+
+    chorale_stream.append(meter.TimeSignature('4/4'))
+    chorale_stream.append(tempo.MetronomeMark(number=160))
+    
+    midi_save_path = './outputs/chorale.mid'
+    chorale_stream.write(fmt='midi', fp=midi_save_path)
+       
+    return chorale, chorale_idx, midi_save_path
+
+
+def play_chorale(midi_file_path):
+    mixer.init()
+    mixer.music.load(midi_file_path)
+    mixer.music.play()
+    
+    while mixer.music.get_busy():
+        continue
+    
+    mixer.quit()
+
+random_chorale, random_chorale_idx, midi_save_path = select_chorale(
+    chorales_train_raw, num_chords=10)
+play_chorale(midi_save_path)
+
+# check minimum and maximum values
+chorales_all = chorales_train_raw + chorales_val_raw + chorales_test_raw
+chorales_all_flat = [chorale_note for chorale in chorales_all for chord in chorale for 
+                     chorale_note in chord]
+notes = set(chorales_all_flat)
+
+min_note = min(notes - {0})    
+max_note = max(notes)
+print(min_note, max_note)
+
+# pre-process the dataset such that the target is only a single note rather than an
+# entire chord
+def process_chorales(in_chorales, window_size=32, window_shift=15, cache=True,
+                     shuffle_buffer_size=None, batch_size=32):
+    ragged_chorale = tf.ragged.constant(in_chorales, ragged_rank=1)
+    tensor_slice_ds = tf.data.Dataset.from_tensor_slices(ragged_chorale)
+    
+    flat_ds = tensor_slice_ds.flat_map(
+        lambda chorale: tf.data.Dataset.from_tensor_slices(chorale))
+    window_ds = flat_ds.window(size=window_size+1, shift=window_shift,
+                               drop_remainder=True)
+    batch_ds = window_ds.flat_map(lambda window: window.batch(window_size+1).map(
+        lambda w: tf.reshape(w, [-1])))
+    shift_ds = batch_ds.map(lambda note: tf.where(note == 0, note, note - min_note+1))
+
+    processed_chorales = shift_ds
+    
+    if cache:
+        processed_chorales = processed_chorales.cache()
+    if shuffle_buffer_size:
+        processed_chorales = processed_chorales.shuffle(shuffle_buffer_size)
+    
+    batched_chorales = processed_chorales.batch(batch_size)
+    batched_chorales = batched_chorales.map(lambda batch: (batch[:, :-1], batch[:, 1:]))
+    
+    return batched_chorales
+
+chorales_train = process_chorales(chorales_train_raw, shuffle_buffer_size=1000)
+chorales_val = process_chorales(chorales_val_raw)
+chorales_test = process_chorales(chorales_test_raw)
+
+for item in chorales_train.take(1):
+    print("X:", item[0])
+    print("y:", item[1])
+      
 # train a model - recurrent, convlutional or both - that can predict the next time step
 # (4 notes), given a sequence of time steps from a chorale
+
 
 # use the model to generate Bach-like music, one note at a time:
 # - give the model the start of a chorale and predict the next note
