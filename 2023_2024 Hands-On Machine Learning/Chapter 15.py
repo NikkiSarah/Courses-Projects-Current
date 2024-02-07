@@ -563,7 +563,7 @@ def extract_tgz(tgz_file, target_dir):
     with tarfile.open(tgz_file, 'r:gz') as f:
         f.extractall(target_dir)
 
-extract_tgz(os.path.join('./datasets', filename), './datasets')
+# extract_tgz(os.path.join('./datasets', filename), './datasets')
 
 root_dir = './datasets/jsb_chorales'
 print(root_dir)
@@ -672,6 +672,16 @@ for item in chorales_train.take(1):
       
 # train a model - recurrent, convlutional or both - that can predict the next time step
 # (4 notes), given a sequence of time steps from a chorale
+# https://www.kaggle.com/code/s4vyss/recurrentneuralnetworks-chapter-15
+
+model = tfk.models.Sequential()
+for _ in range()
+
+model.add(tfk.layers.Conv1D(64, kernel_size=4, activation='relu', input_shape=[None]))
+model.add(tfk.layers.MaxPool1d())
+model.add(tfk.layers.Conv1D(128, kernel_size=4, activation='relu', input_shape=[None]))
+model.add(tfk.layers.MaxPool1d())
+
 
 
 # use the model to generate Bach-like music, one note at a time:
