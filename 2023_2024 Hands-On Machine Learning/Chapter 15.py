@@ -669,18 +669,39 @@ chorales_test = process_chorales(chorales_test_raw)
 for item in chorales_train.take(1):
     print("X:", item[0])
     print("y:", item[1])
-      
+    print("shape:", item[0].shape)
+         
 # train a model - recurrent, convlutional or both - that can predict the next time step
 # (4 notes), given a sequence of time steps from a chorale
 # https://www.kaggle.com/code/s4vyss/recurrentneuralnetworks-chapter-15
+num_steps = 16
+batch_size = 32
+hidden_size = 512
+num_epochs = 1000
+temperature = 10
 
+num_notes = len(notes)
+input_shape = [item[0].shape for item in chorales_train.take(1)]
+conv_filter = [128, 256, 512, 512]
+
+tfk.backend.clear_session()
+tf.random.set_seed(42)
 model = tfk.models.Sequential()
-for _ in range()
+model.add(tfk.layers.Conv1D(64, kernel_size=4, activation="relu", padding="causal",
+                            input_shape=(32, 131)))
+model.add(tfk.layers.MaxPooling1D())
 
-model.add(tfk.layers.Conv1D(64, kernel_size=4, activation='relu', input_shape=[None]))
-model.add(tfk.layers.MaxPool1d())
-model.add(tfk.layers.Conv1D(128, kernel_size=4, activation='relu', input_shape=[None]))
-model.add(tfk.layers.MaxPool1d())
+for i in range(3):
+    model.add(tfk.layers.Conv1D(conv_filter[i], kernel_size=4, activation='relu',
+                                padding="causal"))
+    model.add(tfk.layers.MaxPooling1D())
+model.add(tfk.layers.Dense(num_notes, activation="softmax"))
+
+model.summary()
+
+model.compile(loss="sparse_categorical_crossentropy", 
+              optimizer=tfk.optimizers.Nadam(learning_rate=0.001), metrics=["accuracy"])
+model.fit(chorales_train, validation_data=chorales_val, epochs=2)
 
 
 
