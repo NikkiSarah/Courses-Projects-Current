@@ -182,7 +182,7 @@ mulvar_train = df_mulvar["2016-01":"2018-12"]
 mulvar_val = df_mulvar["2019-01":"2019-05"]
 mulvar_test = df_mulvar["2019-06":]
 
-train_mulvar_ds = tf.keras.utils.timeseries_dataset_from_array(
+train_mulvar_ds = tfk.utils.timeseries_dataset_from_array(
     mulvar_train.to_numpy(),
     targets=mulvar_train["rail"][seq_length:],
     sequence_length=seq_length,
@@ -190,7 +190,7 @@ train_mulvar_ds = tf.keras.utils.timeseries_dataset_from_array(
     shuffle=True,
     seed=42
 )
-val_mulvar_ds = tf.keras.utils.timeseries_dataset_from_array(
+val_mulvar_ds = tfk.utils.timeseries_dataset_from_array(
     mulvar_val.to_numpy(),
     targets=mulvar_val["rail"][seq_length:],
     sequence_length=seq_length,
@@ -198,9 +198,9 @@ val_mulvar_ds = tf.keras.utils.timeseries_dataset_from_array(
 )
 
 tfk.backend.clear_session()
-mulvar_model = tf.keras.Sequential([
-    tf.keras.layers.SimpleRNN(32, input_shape=[None, 5]),
-    tf.keras.layers.Dense(1)
+mulvar_model = tfk.Sequential([
+    tfk.layers.SimpleRNN(32, input_shape=[None, 5]),
+    tfk.layers.Dense(1)
 ])
 
 fit_and_evaluate_model(mulvar_model, train_mulvar_ds, val_mulvar_ds, learning_rate=0.05)
@@ -580,7 +580,7 @@ chorales_val_raw = load_chorales(paths_val)
 chorales_test_raw = load_chorales(paths_test)
 
 
-def select_chorale(chorale_set, shorter_chorales=False, num_chords=None):
+def select_chorale(chorale_set, shorter_chorales=False, num_chords=None, save_path=None):
     if shorter_chorales:
         chorale_lengths = [len(chorale) for chorale in chorale_set]
         shorter_chorales = [chorale for chorale in chorale_set
@@ -605,10 +605,11 @@ def select_chorale(chorale_set, shorter_chorales=False, num_chords=None):
     chorale_stream.append(meter.TimeSignature('4/4'))
     chorale_stream.append(tempo.MetronomeMark(number=160))
     
-    midi_save_path = './outputs/chorale.mid'
-    chorale_stream.write(fmt='midi', fp=midi_save_path)
-       
-    return chorale, chorale_idx, midi_save_path
+    if save_path is not None:
+        midi_save_path=save_path
+        chorale_stream.write(fmt='midi', fp=midi_save_path)
+    
+    return chorale, chorale_idx
 
 
 def play_chorale(midi_file_path):
@@ -621,18 +622,19 @@ def play_chorale(midi_file_path):
     
     mixer.quit()
 
-random_chorale, random_chorale_idx, midi_save_path = select_chorale(
-    chorales_train_raw, num_chords=10)
+midi_save_path='./outputs/chorale.mid'
+random_chorale, random_chorale_idx = select_chorale(chorales_train_raw, num_chords=10,
+                                                    save_path=midi_save_path)
 play_chorale(midi_save_path)
 
 # check minimum and maximum values
 chorales_all = chorales_train_raw + chorales_val_raw + chorales_test_raw
 chorales_all_flat = [chorale_note for chorale in chorales_all for chord in chorale for 
                      chorale_note in chord]
-notes = set(chorales_all_flat)
+unique_notes = set(chorales_all_flat)
 
-min_note = min(notes - {0})    
-max_note = max(notes)
+min_note = min(unique_notes - {0})    
+max_note = max(unique_notes)
 print(min_note, max_note)
 
 # pre-process the dataset such that the target is only a single note rather than an
@@ -662,54 +664,161 @@ def process_chorales(in_chorales, window_size=32, window_shift=15, cache=True,
     
     return batched_chorales
 
-chorales_train = process_chorales(chorales_train_raw, shuffle_buffer_size=1000)
+
+chorales_train = process_chorales(chorales_train_raw + chorales_test_raw,
+                                  shuffle_buffer_size=1000)
 chorales_val = process_chorales(chorales_val_raw)
-chorales_test = process_chorales(chorales_test_raw)
 
 for item in chorales_train.take(1):
+    X = item[0].numpy()
+    y = item[1].numpy()
+    
     print("X:", item[0])
     print("y:", item[1])
     print("shape:", item[0].shape)
-         
+    
 # train a model - recurrent, convlutional or both - that can predict the next time step
 # (4 notes), given a sequence of time steps from a chorale
 # https://www.kaggle.com/code/s4vyss/recurrentneuralnetworks-chapter-15
-num_steps = 16
-batch_size = 32
-hidden_size = 512
-num_epochs = 1000
-temperature = 10
-
-num_notes = len(notes)
-input_shape = [item[0].shape for item in chorales_train.take(1)]
-conv_filter = [128, 256, 512, 512]
+num_notes = len(unique_notes)
+num_embedding_dims = int([item[0].shape[1] for item in chorales_train.take(1)][0])
+conv_filters = [32, 48, 64, 96]
+dilations = [1, 2, 4, 8]
+lr = 1e-3
 
 tfk.backend.clear_session()
 tf.random.set_seed(42)
-model = tfk.models.Sequential()
-model.add(tfk.layers.Conv1D(64, kernel_size=4, activation="relu", padding="causal",
-                            input_shape=(32, 131)))
-model.add(tfk.layers.MaxPooling1D())
-
-for i in range(3):
-    model.add(tfk.layers.Conv1D(conv_filter[i], kernel_size=4, activation='relu',
-                                padding="causal"))
-    model.add(tfk.layers.MaxPooling1D())
+model = tfk.Sequential()
+model.add(tfk.layers.Embedding(input_dim=num_notes, output_dim=num_embedding_dims,
+                               input_shape=[None]))
+for i in range(4):
+    model.add(tfk.layers.Conv1D(conv_filters[i], kernel_size=2, padding="causal",
+                                activation="relu", dilation_rate=dilations[i]))
+    model.add(tfk.layers.BatchNormalization())
+model.add(tfk.layers.LSTM(256, return_sequences=True))
 model.add(tfk.layers.Dense(num_notes, activation="softmax"))
 
 model.summary()
 
 model.compile(loss="sparse_categorical_crossentropy", 
-              optimizer=tfk.optimizers.Nadam(learning_rate=0.001), metrics=["accuracy"])
-model.fit(chorales_train, validation_data=chorales_val, epochs=2)
+              optimizer=tfk.optimizers.Nadam(learning_rate=lr), metrics=["accuracy"])
+early_stopping_cb = tfk.callbacks.EarlyStopping(monitor="val_loss", patience=5,
+                                                restore_best_weights=True)
+history = model.fit(chorales_train, validation_data=chorales_val, epochs=50,
+                    callbacks=[early_stopping_cb])
+
+def plot_fit_history(fit_history):
+    history_df = pd.DataFrame(fit_history.history)
+    fig, axs = plt.subplots(2, 1, sharex=True)
+    history_df[["loss", "val_loss"]].plot(ax=axs[0], style=["b-", "g--."])
+    history_df[["accuracy", "val_accuracy"]].plot(ax=axs[1], style=["b-", "g--."])
+
+plot_fit_history(history)
+
+model.evaluate(chorales_val)
+model.save("./outputs/ch15_ex10_conv_model")
 
 
+tfk.backend.clear_session()
+tf.random.set_seed(42)
+model = tfk.models.Sequential()
+model.add(tfk.layers.Embedding(input_dim=num_notes, output_dim=num_embedding_dims,
+                               input_shape=[None]))
+for _ in range(3):
+    model.add(tfk.layers.GRU(512, return_sequences=True))
+    model.add(tfk.layers.GroupNormalization())
+model.add(tfk.layers.Dense(num_notes, activation="softmax"))
+
+model.summary()
+
+model.compile(loss="sparse_categorical_crossentropy", 
+              optimizer=tfk.optimizers.Nadam(learning_rate=lr), metrics=["accuracy"])
+history = model.fit(chorales_train, validation_data=chorales_val, epochs=50,
+                    callbacks=[early_stopping_cb])
+   
+plot_fit_history(history)
+
+model.evaluate(chorales_val)
+model.save("./outputs/ch15_ex10_gru_rnn_model")
+
+
+tfk.backend.clear_session()
+tf.random.set_seed(42)
+model = tfk.models.Sequential()
+model.add(tfk.layers.Embedding(input_dim=num_notes, output_dim=num_embedding_dims,
+                               input_shape=[None]))
+for _ in range(3):
+    model.add(tfk.layers.LSTM(512, return_sequences=True))
+    model.add(tfk.layers.GroupNormalization())
+model.add(tfk.layers.Dense(num_notes, activation="softmax"))
+
+model.summary()
+
+model.compile(loss="sparse_categorical_crossentropy", 
+              optimizer=tfk.optimizers.Nadam(learning_rate=lr), metrics=["accuracy"])
+history = model.fit(chorales_train, validation_data=chorales_val, epochs=50,
+                    callbacks=[early_stopping_cb])
+   
+plot_fit_history(history)
+
+model.evaluate(chorales_val)
+model.save("./outputs/ch15_ex10_lstm_rnn_model")
 
 # use the model to generate Bach-like music, one note at a time:
-# - give the model the start of a chorale and predict the next note
+chorale_model = tfk.models.load_model("./outputs/ch15_ex10_gru_rnn_model")
+chorale_length = 56
 
-# - append it to the input sequence
+midi_save_path='./outputs/seed_chords.mid'
+seed_chords, _ = select_chorale(chorales_test_raw, num_chords=8, save_path=midi_save_path)
+play_chorale(midi_save_path)
 
-# - predict the next note and append that to the sequence
+seed_tensor = tf.constant(seed_chords, dtype=tf.int64)
+shifted_tensor = tf.where(seed_tensor == 0, seed_tensor, seed_tensor - min_note + 1)
+seed_arpegio = tf.reshape(shifted_tensor, [1, -1])
 
-# - repeat twice more
+for chord in range(chorale_length):
+    for note in range(4):
+        next_notes = chorale_model.predict(seed_arpegio, verbose=0).argmax(axis=-1)
+        next_note = next_notes[:, -1:]
+        seed_arpegio = tf.concat([seed_arpegio, next_note], axis=1)
+shifted_arpegio = tf.where(seed_arpegio == 0, seed_arpegio, seed_arpegio + min_note - 1)
+reshaped_arpegio = tf.reshape(shifted_arpegio, shape=[-1, 4])
+generated_chorale = reshaped_arpegio.numpy()
+
+# generate a more interesting chorale by adding some randomness
+seed_arpegio = tf.reshape(shifted_tensor, [1, -1])
+daringness = 2
+
+for chord in range(chorale_length):
+    for note in range(4):
+        next_note_probas = chorale_model.predict(seed_arpegio, verbose=0)[0, -1:]
+        rescaled_logits = tf.math.log(next_note_probas / daringness)
+        next_note = tf.random.categorical(rescaled_logits, num_samples=1)
+        seed_arpegio = tf.concat([seed_arpegio, next_note], axis=1)
+shifted_arpegio = tf.where(seed_arpegio == 0, seed_arpegio, seed_arpegio + min_note - 1)
+reshaped_arpegio = tf.reshape(shifted_arpegio, shape=[-1, 4])
+generated_chorale_arr = reshaped_arpegio.numpy()
+generated_chorale_lst = generated_chorale_arr.tolist()
+
+start_chord = 15
+num_chords = 5
+generated_chorale_part = generated_chorale_lst[start_chord:start_chord + num_chords]
+
+chorale_stream = stream.Score()
+chorale_part = stream.Part()
+chorale_stream.append(chorale_part)
+chorale_notes = [note.Note(chorale_note) for chord in generated_chorale_part
+                 for chorale_note in chord]
+chorale_part.append(chorale_notes)
+
+chorale_stream.append(meter.TimeSignature('4/4'))
+chorale_stream.append(tempo.MetronomeMark(number=160))
+
+midi_save_path = './outputs/generated_chorale.mid'
+chorale_stream.write(fmt='midi', fp=midi_save_path)
+
+play_chorale(midi_save_path)
+
+
+
+

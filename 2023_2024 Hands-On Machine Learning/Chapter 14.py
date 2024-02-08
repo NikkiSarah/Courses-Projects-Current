@@ -488,9 +488,4 @@ early_stopping_cb = tfk.callbacks.EarlyStopping(monitor="val_loss", patience=5,
 history = model.fit(train_set, validation_data=val_set, epochs=30,
                     callbacks=[reduce_lr_cb, early_stopping_cb])
 
-history_df = pd.DataFrame(history.history)
-fig, axs = plt.subplots(2, 1, sharex=True)
-history_df[["loss", "val_loss"]].plot(ax=axs[0], style=["b-", "g--."])
-history_df[["accuracy", "val_accuracy"]].plot(ax=axs[1], style=["b-", "g--."])
-
 plot_fit_history(history)
