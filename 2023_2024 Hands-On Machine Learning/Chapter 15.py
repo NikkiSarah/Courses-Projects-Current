@@ -547,17 +547,17 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import random
-from music21 import meter, note, stream, tempo
+from music21 import meter, midi, note, stream, tempo
 from pygame import mixer
 import tensorflow as tf
 
 # download the Bach chorales datset and unzip it
 tf_download_root = "https://github.com/ageron/data/raw/main/"
 filename = "jsb_chorales.tgz"
-# filepath = tfk.utils.get_file(filename,
-#                               tf_download_root + filename,
-#                               cache_dir=".",
-#                               extract=True)
+filepath = tfk.utils.get_file(filename,
+                              tf_download_root + filename,
+                              cache_dir=".",
+                              extract=True)
 
 def extract_tgz(tgz_file, target_dir):
     with tarfile.open(tgz_file, 'r:gz') as f:
@@ -619,8 +619,7 @@ def play_chorale(midi_file_path):
     
     while mixer.music.get_busy():
         continue
-    
-    mixer.quit()
+    # mixer.quit()
 
 midi_save_path='./outputs/chorale.mid'
 random_chorale, random_chorale_idx = select_chorale(chorales_train_raw, num_chords=10,
@@ -770,6 +769,29 @@ chorale_length = 56
 
 midi_save_path='./outputs/seed_chords.mid'
 seed_chords, _ = select_chorale(chorales_test_raw, num_chords=8, save_path=midi_save_path)
+# produces a list object
+
+mf = midi.MidiFile()
+mf.open(midi_save_path)
+mf.read()
+mf.close()
+seed_chords = midi.translate.midiFileToStream(mf) # produces a stream.base.Score object
+
+
+chorale_stream = stream.Score()
+chorale_part = stream.Part()
+chorale_stream.append(chorale_part)
+chorale_notes = [note.Note(chorale_note) for chord in seed_chords
+                for chorale_note in chord]
+chorale_part.append(chorale_notes)
+
+chorale_stream.append(meter.TimeSignature('4/4'))
+chorale_stream.append(tempo.MetronomeMark(number=160))
+
+
+
+
+
 play_chorale(midi_save_path)
 
 seed_tensor = tf.constant(seed_chords, dtype=tf.int64)
