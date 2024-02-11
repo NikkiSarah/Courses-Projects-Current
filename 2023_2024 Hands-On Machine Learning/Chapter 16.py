@@ -113,5 +113,86 @@ class ResetStatesCallback(tfk.callbacks.Callback):
 
 model.compile(loss="sparse_categorical_crossentropy", optimizer="nadam",
               metrics=["accuracy"])
-history=model.fit(stateful_train_set, validation_data=stateful_val_set, epochs=10,
-                  callbacks=[ResetStatesCallback(), model_cb])
+history = model.fit(stateful_train_set, validation_data=stateful_val_set, epochs=10,
+                    callbacks=[ResetStatesCallback(), model_cb])
+
+#%% sentiment analysis
+import tensorflow_datasets as tfds
+import tensorflow as tf
+import numpy as np
+import tensorflow.keras as tfk
+import os
+import tensorflow_hub as hub
+
+raw_train_set, raw_val_set, raw_test_set = tfds.load(
+    name="imdb_reviews",
+    split=["train[:90%]", "train[90%:]", "test"],
+    as_supervised=True
+    )
+
+tf.random.set_seed(42)
+train_set = raw_train_set.shuffle(5000, seed=42).batch(32).prefetch(1)
+val_set = raw_val_set.batch(32).prefetch(1)
+test_set = raw_test_set.batch(32).prefetch(1)
+
+for review, label in raw_train_set.take(4):
+    print(review.numpy().decode("utf-8"))
+    print("Label:", label.numpy())
+
+vocab_size = 1000
+text_vec_layer = tfk.layers.TextVectorization(max_tokens=vocab_size)
+text_vec_layer.adapt(train_set.map(lambda reviews, labels: reviews))
+
+embed_size = 128
+tf.random.set_seed(42)
+model = tfk.Sequential([
+    text_vec_layer,
+    tfk.layers.Embedding(vocab_size, embed_size),
+    tfk.layers.GRU(128),
+    tfk.layers.Dense(1, activation="sigmoid")
+    ])
+
+model.compile(loss="binary_crossentropy", optimizer="nadam", metrics=["accuracy"])
+model.fit(train_set, validation_data=val_set, epochs=2)
+
+# masking
+inputs = tfk.layers.Input(shape=[], dtype=tf.string)
+token_ids = text_vec_layer(inputs)
+mask = tf.math.not_equal(token_ids, 0)
+Z = tfk.layers.Embedding(vocab_size, embed_size)(token_ids)
+Z = tfk.layers.GRU(128, dropout=0.2)(Z, mask=mask)
+outputs =tfk.layers.Dense(1, activation="sigmoid")(Z)
+model = tfk.Model(inputs=[inputs], outputs=[outputs])
+
+text_vec_layer_ragged = tfk.layers.TextVectorization(max_tokens=vocab_size, ragged=True)
+text_vec_layer_ragged.adapt(train_set.map(lambda reviews, labels: reviews))
+print(text_vec_layer_ragged(["Great movie!", "This is DiCaprio's best role."]))
+
+print(text_vec_layer(["Great movie!", "This is DiCaprio's best role."]))
+
+# reusing pre-trained embeddings and language models
+os.environ["TFHUB_CACHE_DIR"] = "./datasets/my_tfhub_cache"
+model = tfk.Sequential([
+    hub.KerasLayer("https://tfhub.dev/google/universal-sentence-encoder/4",
+                   trainable=True,
+                   dtype=tf.string,
+                   input_shape=[]),
+    tfk.layers.Dense(64, activation="relu"),
+    tfk.layers.Dense(1, activation="sigmoid")
+    ])
+model.compile(loss="binary_crossentropy", optimizer="nadam", metrics=["accuracy"])
+model.fit(train_set, validation_data=val_set, epochs=10)
+
+#%% an encoder-decoder network for neural machine translation
+
+#%% attention mechanisms
+
+#%% hugging face's transformers library
+
+#%% Coding Exercises: Exercise 8
+
+#%% Coding Exercises: Exercise 9
+
+#%% Coding Exercises: Exercise 10
+
+#%% Coding Exercises: Exercise 11

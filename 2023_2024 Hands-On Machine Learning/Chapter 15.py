@@ -547,17 +547,17 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import random
-from music21 import meter, midi, note, stream, tempo
+from music21 import converter, meter, midi, note, stream, tempo
 from pygame import mixer
 import tensorflow as tf
 
 # download the Bach chorales datset and unzip it
 tf_download_root = "https://github.com/ageron/data/raw/main/"
 filename = "jsb_chorales.tgz"
-filepath = tfk.utils.get_file(filename,
-                              tf_download_root + filename,
-                              cache_dir=".",
-                              extract=True)
+# filepath = tfk.utils.get_file(filename,
+#                               tf_download_root + filename,
+#                               cache_dir=".",
+#                               extract=True)
 
 def extract_tgz(tgz_file, target_dir):
     with tarfile.open(tgz_file, 'r:gz') as f:
@@ -622,8 +622,8 @@ def play_chorale(midi_file_path):
     # mixer.quit()
 
 midi_save_path='./outputs/chorale.mid'
-random_chorale, random_chorale_idx = select_chorale(chorales_train_raw, num_chords=10,
-                                                    save_path=midi_save_path)
+# random_chorale, random_chorale_idx = select_chorale(chorales_train_raw, num_chords=10,
+#                                                     save_path=midi_save_path)
 play_chorale(midi_save_path)
 
 # check minimum and maximum values
@@ -765,54 +765,46 @@ model.save("./outputs/ch15_ex10_lstm_rnn_model")
 
 # use the model to generate Bach-like music, one note at a time:
 chorale_model = tfk.models.load_model("./outputs/ch15_ex10_gru_rnn_model")
-chorale_length = 56
+chorale_length = 10
 
-midi_save_path='./outputs/seed_chords.mid'
-seed_chords, _ = select_chorale(chorales_test_raw, num_chords=8, save_path=midi_save_path)
-# produces a list object
+midi_save_path = './outputs/seed_chords.mid'
+# seed_chords, _ = select_chorale(chorales_test_raw, num_chords=8, save_path=midi_save_path)
+# play_chorale(midi_save_path)
 
-mf = midi.MidiFile()
-mf.open(midi_save_path)
-mf.read()
-mf.close()
-seed_chords = midi.translate.midiFileToStream(mf) # produces a stream.base.Score object
+def convert_midi_file(midi_file_path):
+    midi_stream = converter.parse(midi_file_path)
+    
+    midi_notes = []
+    for ele in midi_stream.flatten():
+        if isinstance(ele, note.Note):
+            midi_notes.append(ele.pitch.midi)
+    
+    chords = [midi_notes[i:i+4] for i in range(0, len(midi_notes), 4)]
+    
+    return chords
 
-
-chorale_stream = stream.Score()
-chorale_part = stream.Part()
-chorale_stream.append(chorale_part)
-chorale_notes = [note.Note(chorale_note) for chord in seed_chords
-                for chorale_note in chord]
-chorale_part.append(chorale_notes)
-
-chorale_stream.append(meter.TimeSignature('4/4'))
-chorale_stream.append(tempo.MetronomeMark(number=160))
-
-
-
-
-
+seed_chords = convert_midi_file(midi_save_path)
 play_chorale(midi_save_path)
 
 seed_tensor = tf.constant(seed_chords, dtype=tf.int64)
 shifted_tensor = tf.where(seed_tensor == 0, seed_tensor, seed_tensor - min_note + 1)
-seed_arpegio = tf.reshape(shifted_tensor, [1, -1])
+# seed_arpegio = tf.reshape(shifted_tensor, [1, -1])
 
-for chord in range(chorale_length):
-    for note in range(4):
-        next_notes = chorale_model.predict(seed_arpegio, verbose=0).argmax(axis=-1)
-        next_note = next_notes[:, -1:]
-        seed_arpegio = tf.concat([seed_arpegio, next_note], axis=1)
-shifted_arpegio = tf.where(seed_arpegio == 0, seed_arpegio, seed_arpegio + min_note - 1)
-reshaped_arpegio = tf.reshape(shifted_arpegio, shape=[-1, 4])
-generated_chorale = reshaped_arpegio.numpy()
+# for chord in range(chorale_length):
+#     for note in range(4):
+#         next_notes = chorale_model.predict(seed_arpegio, verbose=0).argmax(axis=-1)
+#         next_note = next_notes[:, -1:]
+#         seed_arpegio = tf.concat([seed_arpegio, next_note], axis=1)
+# shifted_arpegio = tf.where(seed_arpegio == 0, seed_arpegio, seed_arpegio + min_note - 1)
+# reshaped_arpegio = tf.reshape(shifted_arpegio, shape=[-1, 4])
+# generated_chorale = reshaped_arpegio.numpy()
 
 # generate a more interesting chorale by adding some randomness
 seed_arpegio = tf.reshape(shifted_tensor, [1, -1])
-daringness = 2
+daringness = 10000
 
-for chord in range(chorale_length):
-    for note in range(4):
+for _ in range(chorale_length):
+    for _ in range(4):
         next_note_probas = chorale_model.predict(seed_arpegio, verbose=0)[0, -1:]
         rescaled_logits = tf.math.log(next_note_probas / daringness)
         next_note = tf.random.categorical(rescaled_logits, num_samples=1)
@@ -820,27 +812,28 @@ for chord in range(chorale_length):
 shifted_arpegio = tf.where(seed_arpegio == 0, seed_arpegio, seed_arpegio + min_note - 1)
 reshaped_arpegio = tf.reshape(shifted_arpegio, shape=[-1, 4])
 generated_chorale_arr = reshaped_arpegio.numpy()
-generated_chorale_lst = generated_chorale_arr.tolist()
+generated_chorale = generated_chorale_arr.tolist()
 
-start_chord = 15
-num_chords = 5
-generated_chorale_part = generated_chorale_lst[start_chord:start_chord + num_chords]
+def convert_chorale(in_chorale, num_chords=None, save_path=None):
+    if num_chords is not None:
+        in_chorale = in_chorale[:num_chords]
+    
+    chorale_stream = stream.Score()
+    chorale_part = stream.Part()
+    chorale_stream.append(chorale_part)
+    chorale_notes = [note.Note(chorale_note) for chord in in_chorale
+                    for chorale_note in chord]
+    chorale_part.append(chorale_notes)
 
-chorale_stream = stream.Score()
-chorale_part = stream.Part()
-chorale_stream.append(chorale_part)
-chorale_notes = [note.Note(chorale_note) for chord in generated_chorale_part
-                 for chorale_note in chord]
-chorale_part.append(chorale_notes)
+    chorale_stream.append(meter.TimeSignature('4/4'))
+    chorale_stream.append(tempo.MetronomeMark(number=160))
+    
+    if save_path is not None:
+        midi_save_path=save_path
+        chorale_stream.write(fmt='midi', fp=midi_save_path)
+    
+    return in_chorale
 
-chorale_stream.append(meter.TimeSignature('4/4'))
-chorale_stream.append(tempo.MetronomeMark(number=160))
-
-midi_save_path = './outputs/generated_chorale.mid'
-chorale_stream.write(fmt='midi', fp=midi_save_path)
-
+midi_save_path = "./outputs/generated_chorale.mid"
+_ = convert_chorale(generated_chorale, save_path=midi_save_path)
 play_chorale(midi_save_path)
-
-
-
-
