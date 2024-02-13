@@ -2,7 +2,6 @@
 import numpy as np
 import networkx as nx
 import graphviz
-import pandas as pd
 from scipy import stats
 from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
@@ -46,8 +45,25 @@ nx.draw(graph, with_labels=True, font_weight='bold', pos=nx.planar_layout(graph)
 
 # alternatively
 graph = graphviz.Digraph(format='png', engine='neato')
-nodes = ['U: Motivation', 'X: GPS usage', 'Z: Hippocampus volume', 'Y: Spatial memory', 'U_x', 'U_z', 'u_y']
+nodes = ['U\nMotivation', 'X\nGPS usage', 'Z\nHippocampus volume', 'Y\nSpatial memory', 'U_x', 'U_z', 'U_y']
+positions = ['3,1.5!', '0,0!', '3,0!', '6,0!', '0,-1.5!', '3,-1.5!', '6,-1.5!']
 
+[graph.node(n, pos=pos) for n, pos in zip(nodes, positions)]
+
+graph.node('U\nMotivation', style='dashed')
+graph.node('U_x', style='dashed')
+graph.node('U_z', style='dashed')
+graph.node('U_y', style='dashed')
+
+graph.edge('U\nMotivation', 'X\nGPS usage')
+graph.edge('U\nMotivation', 'Y\nSpatial memory')
+graph.edge('X\nGPS usage', 'Z\nHippocampus volume')
+graph.edge('Z\nHippocampus volume', 'Y\nSpatial memory')
+graph.edge('U_x', 'X\nGPS usage', style='dashed')
+graph.edge('U_y', 'Y\nSpatial memory', style='dashed')
+graph.edge('U_z', 'Z\nHippocampus volume', style='dashed')
+
+graph.render(f'./img/ch06_gps', view=True)
 
 class GPSMemorySCM:
     def __init__(self, random_seed=None):
@@ -83,7 +99,7 @@ class GPSMemorySCM:
 
 
 scm = GPSMemorySCM()
-gps_obs, hippocampus_obs, memory_obs = scm.sample(100)
+gps_obs, hippocampus_obs, memory_obs = scm.sample(500)
 
 treatments = []
 exp_results = []
@@ -97,14 +113,35 @@ axs[0].scatter(gps_obs, memory_obs, alpha=0.2)
 axs[0].set_xlabel('GPS usage')
 axs[0].set_ylabel('Spatial memory change')
 axs[0].set_title('Observational')
-axs[1].scatter(gps_hours, memory, alpha=0.2)
-axs[0].set_title('Interventional')
+axs[1].scatter(treatments, exp_results, alpha=0.2)
+axs[1].set_xlabel('GPS usage')
+axs[1].set_title('Interventional')
 fig.tight_layout()
 
+lr_naive = LinearRegression()
+lr_naive.fit(X=gps_obs.reshape(-1, 1), y=memory_obs)
 
-for idx, ax in enumerate(axs.flat):
-    ax.scatter(xvars[idx], yvars[idx], alpha=0.2)
-    ax.set_xlabel(f'{xlabs[idx]}')
-    ax.set_ylabel(f'{ylabs[idx]}')
-plt.suptitle(title)
-fig.tight_layout()
+treatments_unpack = np.array(treatments).flatten()
+results_unpack = np.array(exp_results).flatten()
+lr_exp = LinearRegression()
+lr_exp.fit(X=treatments_unpack.reshape(-1, 1), y=results_unpack)
+
+X_test = np.arange(1, 21).reshape(-1, 1)
+preds_naive = lr_naive.predict(X_test)
+preds_exp = lr_exp.predict(X_test)
+
+plt.scatter(treatments, exp_results, alpha=0.2)
+plt.plot(X_test, preds_exp, label="Experimental", color="red")
+plt.plot(X_test, preds_naive, label="Naive", color="blue")
+plt.xlabel('GPS usage')
+plt.ylabel('Spatial memory change')
+plt.legend()
+
+print(f'Naive model:\n{lr_naive.coef_}\n')
+print(f'Experimental model:\n{lr_exp.coef_}\n')
+
+lr_zx = LinearRegression()
+lr_zx.fit(X=gps_obs.reshape(-1, 1), y=hippocampus_obs)
+lr_yxz = LinearRegression()
+lr_yxz.fit(X=np.array([gps_obs, hippocampus_obs]).T, y=memory_obs)
+print(lr_zx.coef_[0] * lr_yxz.coef_[1])
