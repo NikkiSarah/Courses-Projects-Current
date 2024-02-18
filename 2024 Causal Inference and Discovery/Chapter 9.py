@@ -107,7 +107,7 @@ effect_true = earnings_test.true_effect.values
 print(mean_absolute_percentage_error(effect_true, effect_pred))
 
 
-def PlotEffect(true_effect, predicted_effect):
+def plot_effect(true_effect, predicted_effect):
     plt.scatter(true_effect, predicted_effect, color='#00B0F0')
     plt.plot(np.sort(true_effect), np.sort(true_effect), color='#FF0000', alpha=0.7, label='Perfect model')
     plt.xlabel('True effect', alpha=0.5)
@@ -115,7 +115,7 @@ def PlotEffect(true_effect, predicted_effect):
     plt.legend()
 
 
-PlotEffect(effect_true, effect_pred)
+plot_effect(effect_true, effect_pred)
 
 #%% repeat on a small dataset
 model_small = CausalModel(data=earnings_train.sample(100), treatment='took_a_course', outcome='earnings',
@@ -149,7 +149,7 @@ effect_pred = est_test.cate_estimates.flatten()
 effect_true = earnings_test.true_effect.values
 print(mean_absolute_percentage_error(effect_true, effect_pred))
 
-PlotEffect(effect_true, effect_pred)
+plot_effect(effect_true, effect_pred)
 
 #%% implement a t-learner
 model = CausalModel(data=earnings_train, treatment='took_a_course', outcome='earnings',
@@ -178,7 +178,7 @@ effect_pred = est_test.cate_estimates.flatten()
 effect_true = earnings_test.true_effect.values
 print(mean_absolute_percentage_error(effect_true, effect_pred))
 
-PlotEffect(effect_true, effect_pred)
+plot_effect(effect_true, effect_pred)
 
 #%% implement an x-learner
 model = CausalModel(data=earnings_train, treatment='took_a_course', outcome='earnings',
@@ -220,7 +220,7 @@ effect_pred = est_test.cate_estimates.flatten()
 effect_true = earnings_test.true_effect.values
 print(mean_absolute_percentage_error(effect_true, effect_pred))
 
-PlotEffect(effect_true, effect_pred)
+plot_effect(effect_true, effect_pred)
 
 # repeat on a small dataset
 model = CausalModel(data=earnings_train.sample(100), treatment='took_a_course', outcome='earnings',
@@ -247,4 +247,4 @@ effect_pred = est_test.cate_estimates.flatten()
 effect_true = earnings_test.true_effect.values
 print(mean_absolute_percentage_error(effect_true, effect_pred))
 
-PlotEffect(effect_true, effect_pred)
+plot_effect(effect_true, effect_pred)
