@@ -9,8 +9,8 @@ from sklearn.model_selection import GridSearchCV
 import json
 from sklearn.model_selection import train_test_split
 from econml.metalearners import SLearner, XLearner, TLearner
-from econml.dml import LinearDML, CausalForestDML, DML
-from econml.dr import DRLearner, SparseLinearDRLearner
+from econml.dml import LinearDML, CausalForestDML
+from econml.dr import DRLearner
 import time
 from tqdm import tqdm
 
