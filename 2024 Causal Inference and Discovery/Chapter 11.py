@@ -9,6 +9,8 @@ import torch
 import pytorch_lightning as pl
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_absolute_percentage_error
+import pandas as pd
+from models.causal_bert_pytorch.CausalBert import CausalBertWrapper
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(device)
@@ -71,5 +73,44 @@ for model_name, results in benchmark_results.items():
     plt.tight_layout()
     i += 1
 
+#%% causalbert
+df = pd.read_csv('./data/manga_processed.csv')
+print(df.head())
+
+causal_bert = CausalBertWrapper(batch_size=8, g_weight=0.05, Q_weight=1., mlm_weight=0.05)
+causal_bert.train(texts=df.text, confounds=df.has_photo, treatments=df.female_avatar,
+                  outcomes=df.upvote, epochs=6)
+preds = causal_bert.inference(texts=df.text, confounds=df.has_photo)[0]
+
+ate = np.mean(preds[:, 1] - preds[:, 0])
+print(ate)
+
+#%% causality and time series
+import pandas as pd
+import causalpy as cp
+import matplotlib.pyplot as plt
+
+data = pd.read_csv('./data/gt_social_media_data.csv')
+print(data.head())
+
+data.index = pd.to_datetime(data.date)
+data.drop('date', axis=1, inplace=True)
+
+for i, series in enumerate(data.columns):
+    plt.plot(data.index, data[series], label=series.title(), lw=2.5, alpha=0.7)
+plt.axvline(pd.to_datetime('2022-10-28'), color='black', lw=3, ls='dotted',
+            label='The bird is freed')
+plt.xlabel('Day', alpha=0.5)
+plt.ylabel('Search volume', alpha=0.5)
+plt.legend()
+
+treatment_idx = pd.to_datetime('2022-10-28')
+model = cp.pymc_models.WeightedSumFitter()
+formula = 'twitter ~ 0 + tiktok + linkedin + instagram'
+
+results = cp.pymc_experiments.SyntheticControl(data, treatment_idx, formula, model=model)
+
+results.plot(plot_predictors=True)
+results.summary()
 
 
