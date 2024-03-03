@@ -5,11 +5,11 @@ from pyspark.sql.types import *
 spark = SparkSession.builder.master("local[*]").getOrCreate()
 prev = spark.read.csv("data/linkage/block*.csv")
 print(prev)
-print(prev.show(5))
+prev.show(5)
 
 parsed = spark.read.option("header", "true").option("nullValue", "?").option("inferSchema", "true").\
     csv("data/linkage/block*.csv")
-print(parsed.printSchema())
+parsed.printSchema()
 
 # define the schema ahead-of-time to provide a performance boost
 schema = StructType([StructField("id_1", IntegerType(), False),
@@ -35,8 +35,8 @@ print(parsed.count())
 #%% Analysing Data With the DataFrame API
 from pyspark.sql.functions import avg, col, expr, stddev
 
-print(parsed.printSchema())
-print(parsed.show(5))
+parsed.printSchema()
+parsed.show(5)
 print(parsed.count())
 
 # cache the dataset for performance benefits
@@ -59,7 +59,7 @@ spark.sql("""
 """).show()
 
 # use HiveQL in queries
-# hive_spark = SparkSession.builder.master("local[4]").enableHiveSupport().getOrCreate()
+hive_spark = SparkSession.builder.master("local[4]").enableHiveSupport().getOrCreate()
 
 #%% Fast Summary Statistics For DataFrames
 # generate summary statistics
@@ -123,8 +123,8 @@ def pivot_summary(desc):
 
 match_summary_sdf = pivot_summary(match_summary)
 miss_summary_sdf = pivot_summary(miss_summary)
-print(match_summary_sdf.show())
-print(miss_summary_sdf.show())
+match_summary_sdf.show()
+miss_summary_sdf.show()
 
 #%% Joining DataFrames And Selecting Features
 match_summary_sdf.createOrReplaceTempView("match_desc")
@@ -155,6 +155,6 @@ def crossTabs(scored, t):
 
 
 # a high threshold means almost all the non-matches are filtered out but over 90% of the matches are retained
-print(crossTabs(scored, 4.0).show())
+crossTabs(scored, 4.0).show()
 # a low threshold means all the known matches are captured, but at a substantial number of FPs
-print(crossTabs(scored, 2.0).show())
+crossTabs(scored, 2.0).show()

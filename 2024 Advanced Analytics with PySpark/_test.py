@@ -12,4 +12,4 @@ data_path = r"Documents\GitHub\Courses-Projects-Current\2024 Advanced Analytics 
 df = spark.read.option("header", "true").csv(data_path)
 df.show()
 
-df.write.parquet("outputs/zones_test2")
+df.write.parquet("outputs/zones2")
