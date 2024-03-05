@@ -142,9 +142,11 @@ def area_under_curve(positive_data, artist_ids, predict_function):
         return user_neg_artists
 
     user_artist_rdd = positive_data.select("user", "artist").rdd.groupByKey().mapValues(list).collect()
-    neg_data = spark.createDataFrame(gen_negative_data(user_artist_rdd), schema=["user", "artist"])
+    neg_data = spark.createDataFrame(gen_negative_data(user_artist_rdd), schema=["user", "artist"])\
+        .withColumn("count", lit(1))
 
-    neg_preds = predict_function(neg_data).withColumnRenamed("prediction", "neg_pred")
+    neg_preds = predict_function(neg_data).select("user", "artist", "prediction")\
+        .withColumnRenamed("prediction", "neg_pred")
     joined_preds = pos_preds.join(neg_preds, "user").select("user", "pos_pred", "neg_pred").cache()
 
     all_counts = joined_preds.groupBy("user").agg(count(lit(1)).alias("total")).select("user", "total")
@@ -167,15 +169,14 @@ print(mean_auc)
 # benchmark the result against the auc if the globally most-played artists are recommended to every user
 def predict_most_played(in_data):
     play_counts = in_data.groupBy("artist").agg(_sum("count").alias("prediction")).select("artist", "prediction")
-    return in_data.join(play_counts, "artist", "left_outer")
+    joined_data = in_data.join(play_counts, "artist", "left_outer")
+    return joined_data
 
 
 benchmark_auc = area_under_curve(cv_data, artist_id_set, predict_most_played)
 print(benchmark_auc)
 
 # https://github.com/sryza/aas/tree/pyspark-edition
-# Check out reason for WARN TaskSetManager: Stage 791 contains a task of very large size (2373 KiB). The maximum recommended task size is 1000 KiB.
-
 #%% Hyperparameter Tuning
 from itertools import product
 from pprint import pprint
@@ -186,13 +187,13 @@ alphas = [1., 40.]
 param_grid = list(product(*[ranks, reg_params, alphas]))
 
 results = []
-for params in param_grid:
+for params in param_grid[:1]:
     rank = params[0]
     reg_param = params[1]
     alpha = params[2]
 
-    als_algo = ALS().setSeed(0).setImplicitPrefs(True).setRank(rank).setRegParam(reg_param).setAlpha(alpha)\
-        .setMaxIter(20).setUserCol('user').setItemCol('artist').setRatingCol('count').setPredictionCol('prediction')
+    als_algo = ALS().setSeed(10).setImplicitPrefs(True).setRank(rank).setRegParam(reg_param).setAlpha(alpha)\
+        .setMaxIter(20).setUserCol("user").setItemCol("artist").setRatingCol("count")
     als_model = als_algo.fit(train_data)
 
     auc = area_under_curve(cv_data, artist_id_set, als_model.transform)
@@ -210,6 +211,13 @@ pprint(results)
 #%% Making Recommendations
 # select 100 users from the dataset
 selected_users = all_data.select("user").distinct().limit(100)
+
+
+def make_recommendations(model, user_id, num_recs):
+    user_subset = train_data.select("user").where(col("user") == user_id).distinct()
+    recs = model.recommendForUserSubset(user_subset, num_recs)
+    return recs
+
 
 
 
