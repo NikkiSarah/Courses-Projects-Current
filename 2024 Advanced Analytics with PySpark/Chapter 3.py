@@ -5,7 +5,9 @@ from pyspark.sql.functions import col, max, min, split
 from pyspark.sql.types import IntegerType, StringType
 
 spark_config = (SparkConf().setMaster("local[*]")
-                .set("spark.executor.memory", "10g")
+                # .set("spark.executor.memory", "5g") # smaller VM
+                # .set("spark.driver.memory", "5g")
+                .set("spark.executor.memory", "10g") # home
                 .set("spark.driver.memory", "10g")
                 )
 
@@ -123,7 +125,8 @@ als_model = als_algo.fit(train_data)
 
 # create a function calculating the area under the curve
 def area_under_curve(positive_data, artist_ids, predict_function):
-    pos_preds = predict_function(positive_data.select("user", "artist")).withColumnRenamed("prediction", "pos_pred")
+    pos_preds = predict_function(positive_data).select("user", "artist", "prediction")\
+        .withColumnRenamed("prediction", "pos_pred")
 
     def gen_negative_data(user_artist_tuples):
         user_neg_artists = []
@@ -160,19 +163,56 @@ def area_under_curve(positive_data, artist_ids, predict_function):
 mean_auc = area_under_curve(cv_data, artist_id_set, als_model.transform)
 print(mean_auc)
 
+
 # benchmark the result against the auc if the globally most-played artists are recommended to every user
-def predict_most_played(train_data):
-    play_counts = train_data.groupBy("artist").agg(_sum("count").alias("pred")).select("artist", "pred")
-    joined_preds = all_data.join(play_counts, "artist", "left_outer").select("user", "artist", "pred")
-    return joined_preds
+def predict_most_played(in_data):
+    play_counts = in_data.groupBy("artist").agg(_sum("count").alias("prediction")).select("artist", "prediction")
+    return in_data.join(play_counts, "artist", "left_outer")
 
 
-benchmark_auc = area_under_curve(cv_data, artist_id_set, predict_most_played(train_data))
+benchmark_auc = area_under_curve(cv_data, artist_id_set, predict_most_played)
 print(benchmark_auc)
 
-https://github.com/sryza/aas/tree/pyspark-edition
-Check out reason for WARN TaskSetManager: Stage 791 contains a task of very large size (2373 KiB). The maximum recommended task size is 1000 KiB.
+# https://github.com/sryza/aas/tree/pyspark-edition
+# Check out reason for WARN TaskSetManager: Stage 791 contains a task of very large size (2373 KiB). The maximum recommended task size is 1000 KiB.
 
 #%% Hyperparameter Tuning
+from itertools import product
+from pprint import pprint
+
+ranks = [5, 30]
+reg_params = [4., 0.0001]
+alphas = [1., 40.]
+param_grid = list(product(*[ranks, reg_params, alphas]))
+
+results = []
+for params in param_grid:
+    rank = params[0]
+    reg_param = params[1]
+    alpha = params[2]
+
+    als_algo = ALS().setSeed(0).setImplicitPrefs(True).setRank(rank).setRegParam(reg_param).setAlpha(alpha)\
+        .setMaxIter(20).setUserCol('user').setItemCol('artist').setRatingCol('count').setPredictionCol('prediction')
+    als_model = als_algo.fit(train_data)
+
+    auc = area_under_curve(cv_data, artist_id_set, als_model.transform)
+
+    # free up model resources
+    als_model.userFactors.unpersist()
+    als_model.itemFactors.unpersist()
+
+    results.append((auc, (rank, reg_param, alpha)))
+
+# sort by descending AUC
+results.sort(key=lambda x: x[0], reverse=True)
+pprint(results)
+
+#%% Making Recommendations
+# select 100 users from the dataset
+selected_users = all_data.select("user").distinct().limit(100)
 
 
+
+
+
+als_algo = ALS(seed=0, maxIter=5, implicitPrefs=True, userCol='user', itemCol='artist', ratingCol='count')
