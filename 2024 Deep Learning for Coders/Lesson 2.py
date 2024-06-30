@@ -127,14 +127,14 @@ interp.plot_top_losses(5, nrows=2)
 #%% Turning the Model into an Online Application
 
 # save the model
-learn.export()
+learn.export('model.pkl')
 
 # check that it exists
 path = Path()
 path.ls(file_exts='.pkl')
 
 # load the saved model
-learn_inf = load_learner(path/'export.pkl')
+learn_inf = load_learner(path/'model.pkl')
 
 # make a prediction for a single image
 subdir = path/'African animals'/'lion'
@@ -143,5 +143,3 @@ learn_inf.predict(file_lst[0])
 
 # check the possible classes
 learn_inf.dls.vocab
-
-
