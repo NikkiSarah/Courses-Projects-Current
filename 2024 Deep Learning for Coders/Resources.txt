@@ -1,0 +1,5 @@
+Course: https://course.fast.ai/
+Forums: https://course.fast.ai/Resources/forums.html
+Online Book: https://github.com/fastai/fastbook
+
+minimalSpace hugging face token: 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
