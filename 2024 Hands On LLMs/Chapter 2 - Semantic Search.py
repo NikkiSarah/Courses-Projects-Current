@@ -45,14 +45,15 @@ In the United States, it was first released on film stock, expanding to venues u
 The film had a worldwide gross over $677 million (and $773 million with subsequent re-releases), making it the tenth-highest grossing film of 2014. 
 It received acclaim for its performances, direction, screenplay, musical score, visual effects, ambition, themes, and emotional weight. 
 It has also received praise from many astronomers for its scientific accuracy and portrayal of theoretical astrophysics. Since its premiere, Interstellar gained a cult following,[5] and now is regarded by many sci-fi experts as one of the best science-fiction films of all time.
-Interstellar was nominated for five awards at the 87th Academy Awards, winning Best Visual Effects, and received numerous other accolades"""
+Interstellar was nominated for five awards at the 87th Academy Awards, winning Best Visual Effects, and received numerous other accolades
+"""
 
 # Step 1
 # split into a list of sentences
 texts = text.split('.')
  
 # clean up to remove empty spaces and new lines
-texts = np.array([t.strip(' \n') for t in texts])
+texts = np.array([t.strip(' \n') for t in texts]).tolist()
 
 # Step 2: embed the texts
 response = co.embed(texts=texts).embeddings
@@ -85,6 +86,17 @@ def search(query):
 
 # examples...
 query = "How much did the film make?"
+query_embed = co.embed(texts=[query]).embeddings[0]
+similar_item_ids = search_index.get_nns_by_vector(query_embed, n=3, include_distances=True)
+similar_item_ids[0]
+texts
+
+print(texts[similar_item_ids[0]])
+
+
+results = pd.DataFrame(data)
+
+
 search(query)
 
 query = "Tell me about the $$$"
