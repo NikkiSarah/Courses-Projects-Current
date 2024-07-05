@@ -7,14 +7,14 @@ from pyspark.sql.functions import col
 spark_config = (SparkConf().setMaster("local[*]")
                 # .set("spark.executor.memory", "5g") # smaller VM
                 # .set("spark.driver.memory", "5g")
-                .set("spark.executor.memory", "10g") # home
+                .set("spark.executor.memory", "10g")
                 .set("spark.driver.memory", "10g")
                 )
 
 spark = SparkSession.builder.config(conf=spark_config).getOrCreate()
 
 # import the data without column names and print the schema
-data_no_header = spark.read.option("inferSchema", True).option("header", False).csv("data/covtype/covtype.data")
+data_no_header = spark.read.option("inferSchema", True).option("header", False).csv("data/covertype/covtype.data")
 data_no_header.printSchema()
 data_no_header.show(5, truncate=False)
 
@@ -96,9 +96,11 @@ print(sum([train_prob * test_prob for train_prob, test_prob in zip(train_prior_p
 
 #%% Tuning Decison Trees
 from pyspark.ml import Pipeline
-from pyspark.ml.tuning import ParamGridBuilder
-from pyspark.ml.tuning import TrainValidationSplit
+from pyspark.ml.tuning import ParamGridBuilder, TrainValidationSplit
 from pprint import pprint
+from pyspark.sql.functions import udf
+from pyspark.ml.feature import VectorIndexer
+from pyspark.sql.types import IntegerType
 
 # encapsulate the feature creation and classifier in a single pipleine
 vector_assembler = VectorAssembler(inputCols=input_cols, outputCol="featureVector")
@@ -142,4 +144,73 @@ multi_class_evaluator.evaluate(best_model.transform(test_data))
 # "undo" the one-hot encoding
 def unencode_onehot(in_data):
     wilderness_cols = ["wilderness_area_" + str(i) for i in range(4)]
-    wilderness_assembler = VectorAssembler().
+    wilderness_assembler = VectorAssembler().setInputCols(wilderness_cols).setOutputCol("wilderness")
+
+    unhot_udf = udf(lambda v: v.toArray().tolist().index(1))
+
+    with_wilderness = wilderness_assembler.transform(in_data).drop(*wilderness_cols)\
+        .withColumn("wilderness", unhot_udf(col("wilderness")))
+
+    soil_cols = ["soil_type_" + str(i) for i in range(40)]
+    soil_assembler = VectorAssembler().setInputCols(soil_cols).setOutputCol("soil")
+
+    with_soil = soil_assembler.transform(with_wilderness).drop(*soil_cols)\
+        .withColumn("soil", unhot_udf(col("soil")))
+
+    out_data = with_soil.withColumn("wilderness", col("wilderness").cast(IntegerType()))
+    out_data = out_data.withColumn("soil", col("soil").cast(IntegerType()))
+
+    return out_data
+
+
+unenc_train_data = unencode_onehot(train_data)
+unenc_train_data.printSchema()
+
+# check that the unencoding worked
+unenc_train_data.groupBy("wilderness").count().show()
+
+cols = unenc_train_data.columns
+input_cols = [col for col in cols if col != "cover_type"]
+
+vector_assembler = VectorAssembler().setInputCols(input_cols).setOutputCol("featureVector")
+# turn input into properly-labelled categorical feature columns
+# note the max categories >= 40 because soil has 40 values
+vector_indexer = VectorIndexer().setMaxCategories(40).setInputCol("featureVector").setOutputCol("indexedVector")
+
+clf = DecisionTreeClassifier().setLabelCol("cover_type").setFeaturesCol("indexedVector").setPredictionCol("prediction")
+pipeline = Pipeline().setStages([vector_assembler, vector_indexer, clf])
+
+hp_grid = (ParamGridBuilder().addGrid(clf.impurity, ["gini", "entropy"]).addGrid(clf.maxDepth, [1, 20])
+           .addGrid(clf.maxBins, [40, 300]).addGrid(clf.minInfoGain, [0.0, 0.05]).build())
+
+multi_class_evaluator = (MulticlassClassificationEvaluator().setLabelCol("cover_type").setPredictionCol("prediction")
+                         .setMetricName("accuracy"))
+
+# use train-validation split rather than k-fold cv as it's less expensive and cv doesn't add much value with large
+# data sets
+# hold out 10% of the training data as a validation set
+validator = TrainValidationSplit(seed=1234, estimator=pipeline, evaluator=multi_class_evaluator,
+                                 estimatorParamMaps=hp_grid, trainRatio=0.9)
+validator_model = validator.fit(unenc_train_data)
+
+# examine the accuracy for each hyperparameter combination
+metrics = validator_model.validationMetrics
+params = validator_model.getEstimatorParamMaps()
+metrics_and_params = list(zip(metrics, params))
+
+metrics_and_params.sort(key=lambda x: x[0], reverse=True)
+metrics_and_params_df = pd.DataFrame(metrics_and_params)
+
+# examine the accuracy of the best model for the cv set and the test set
+metrics.sort(reverse=True)
+print(metrics[0])
+
+unenc_test_data = unencode_onehot(test_data)
+multi_class_evaluator.evaluate(best_model.transform(unenc_test_data))
+
+#%% Random Forests
+from pyspark.ml.classification import RandomForestClassifier
+
+clf = RandomForestClassifier(seed=1234, labelCol="cover_type", featuresCol="indexedVector", predictionCol="prediction")
+
+

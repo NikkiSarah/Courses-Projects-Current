@@ -7,7 +7,7 @@ from pyspark.sql.types import IntegerType, StringType
 spark_config = (SparkConf().setMaster("local[*]")
                 # .set("spark.executor.memory", "5g") # smaller VM
                 # .set("spark.driver.memory", "5g")
-                .set("spark.executor.memory", "10g") # home
+                .set("spark.executor.memory", "10g")
                 .set("spark.driver.memory", "10g")
                 )
 
@@ -176,14 +176,13 @@ def predict_most_played(in_data):
 benchmark_auc = area_under_curve(cv_data, artist_id_set, predict_most_played)
 print(benchmark_auc)
 
-# https://github.com/sryza/aas/tree/pyspark-edition
 #%% Hyperparameter Tuning
 from itertools import product
 from pprint import pprint
 
 ranks = [5, 30]
-reg_params = [4., 0.0001]
-alphas = [1., 40.]
+reg_params = [0.1, 0.001, 0.0001, 0.0001]
+alphas = [1., 10., 40.]
 param_grid = list(product(*[ranks, reg_params, alphas]))
 
 results = []
@@ -205,22 +204,66 @@ for params in param_grid[:1]:
     results.append((auc, (rank, reg_param, alpha)))
 
 # sort by descending AUC
-results.sort(key=lambda x: x[0], reverse=True)
-pprint(results)
+import pandas as pd
+
+results = pd.read_csv("./outputs/als_results.csv", header=None, sep=None, engine="python",
+                      names=["auc", "rank", "reg_param", "alpha"])
+results.replace("\)+", "", regex=True, inplace=True)
+results.replace("\(+", "", regex=True, inplace=True)
+
+results.auc = results.auc.astype(float)
+results['rank'] = results['rank'].astype(int)
+results.alpha = results.alpha.astype(float)
+
+results.sort_values("auc", ascending=False, inplace=True)
+
+# results.sort(key=lambda x: x[0], reverse=True)
+# pprint(results)
 
 #%% Making Recommendations
-# select 100 users from the dataset
-selected_users = all_data.select("user").distinct().limit(100)
+best_rank = results['rank'][0].tolist()
+best_reg_param = results.reg_param[0].tolist()
+best_alpha = results.alpha[0].tolist()
+
+als_algo = (ALS().setSeed(10).setImplicitPrefs(True).setRank(best_rank).setRegParam(best_reg_param)\
+            .setAlpha(best_alpha).setMaxIter(20).setUserCol("user").setItemCol("artist").setRatingCol("count"))
+final_als_model = als_algo.fit(train_data)
+
+# locate all lines with the specified user id and collect the dataset
+user_id = 2093760
+# locate all lines with the specified user id and collect the dataset
+existing_artist_ids = train_data.filter(train_data.user == user_id).select("artist").collect()
+existing_artist_ids = [i[0] for i in existing_artist_ids]
+# filter for those artists
+artist_by_id.filter(col('id').isin(existing_artist_ids)).show()
+
+# make some recommendations - not that this approach is suitable for batch scoring but not real-time use cases
+user_subset = train_data.select("user").where(col("user") == user_id).distinct()
+top_preds = final_als_model.recommendForUserSubset(user_subset, 5)
+top_preds.show()
+# convert to a pandas dataframe
+top_preds_p = top_preds.toPandas()
+print(top_preds_p)
+# extract the artist ids from the recommendations column
+recommended_artist_ids = [i[0] for i in top_preds_p.recommendations[0]]
+# filter the artist_by_id column by those ids to get the artist names
+artist_by_id.filter(col('id').isin(recommended_artist_ids)).show()
 
 
-def make_recommendations(model, user_id, num_recs):
-    user_subset = train_data.select("user").where(col("user") == user_id).distinct()
-    recs = model.recommendForUserSubset(user_subset, num_recs)
-    return recs
+# select 100 random users from the dataset
+some_users = all_data.select("user").distinct().limit(100)
 
 
+def make_recommendations(als_model, user_id, num_recs):
+    user_subset = train_data.select('user').where(col('user') == user_id).distinct()
+    recommendations = als_model.recommendForUserSubset(user_subset, num_recs)
+    return recommendations
 
 
+some_recommendations = [(user_id[0], make_recommendations(final_als_model, user_id[0], 5)) for user_id in
+                        some_users.collect()]
 
-
-als_algo = ALS(seed=0, maxIter=5, implicitPrefs=True, userCol='user', itemCol='artist', ratingCol='count')
+for user_id, recs_df in some_recommendations:
+    recs_df = recs_df.select("recommendations")
+    recommended_artists = [row.asDict()["artist"] for row in recs_df.collect()[0][0]]
+    print(f"{user_id} -> {', '.join(map(str, recommended_artists))}")
