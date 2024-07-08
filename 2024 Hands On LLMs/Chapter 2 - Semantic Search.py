@@ -20,12 +20,13 @@ import pandas as pd
 from tqdm import tqdm
 from sklearn.metrics.pairwise import cosine_similarity
 from annoy import AnnoyIndex
+import os
  
 # enter your Cohere API key
-api_key = ''
+API_KEY = os.environ.get('COHERE_API_KEY')
  
 # create and retrieve a Cohere API key from os.cohere.ai
-co = cohere.Client(api_key)
+co = cohere.Client(API_KEY)
 
 # use the first section of the Wikipedia article on the movie 'Intersellar' as the
 # input text
@@ -78,7 +79,7 @@ def search(query):
     similar_item_ids = search_index.get_nns_by_vector(query_embed, n=3,
                                                       include_distances=True)
     # format the results
-    results = pd.DataFrame(data={'texts': texts[similar_item_ids[0]],
+    results = pd.DataFrame(data={'texts': [texts[i] for i in similar_item_ids[0]],
                                  'distance': similar_item_ids[1]})
     # print & query the results
     print(f"Query:'{query}'\nNearest neighbours:")
@@ -86,17 +87,6 @@ def search(query):
 
 # examples...
 query = "How much did the film make?"
-query_embed = co.embed(texts=[query]).embeddings[0]
-similar_item_ids = search_index.get_nns_by_vector(query_embed, n=3, include_distances=True)
-similar_item_ids[0]
-texts
-
-print(texts[similar_item_ids[0]])
-
-
-results = pd.DataFrame(data)
-
-
 search(query)
 
 query = "Tell me about the $$$"
@@ -108,8 +98,8 @@ search(query)
 query = "How was the movie released?"
 search(query)
 
-# this approach always produces a result, even if the query is completed unrelated
-# to the text
+# WARNING: a result is always generated, even if the query is completed unrelated to the
+# text being queried
 query = "What is the mass of the moon?"
 search(query)
 
@@ -117,17 +107,18 @@ search(query)
 # takes the search query and the results, and returns the optimal order of the
 # documents such that the most relevant ones are ranked higher
 import cohere
+import os
 
-API_KEY = ''
+API_KEY = os.environ.get('COHERE_API_KEY')
 co = cohere.Client(API_KEY)
 MODEL_NAME = "rerank-english-02"
 query = "film gross"
 
 # a simple re-ranker that doesn't require training or tuning
-results = co.rerank(query=query, model=MODEL_NAME, documents=texts, top_n=3)
+results = co.rerank(query=query, model=MODEL_NAME, documents=texts, top_n=3).results
 for idx, r in enumerate(results):
     print(f"Document Rank: {idx + 1}, Document Index: {r.index}")
-    print(f"Document: {r.document['text']}")
+    print(f"Document: {texts[r.index]}")
     print(f"Relevance Score: {r.relevance_score:.2f}")
     print("\n")
 

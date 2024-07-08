@@ -1,0 +1,39 @@
+{
+    "os": "Windows-10-10.0.19045-SP0",
+    "python": "3.12.4",
+    "heartbeatAt": "2024-07-08T05:22:41.116733",
+    "startedAt": "2024-07-08T05:22:40.451829",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "<python with no main file>",
+    "codePathLocal": null,
+    "git": {
+        "remote": "https://github.com/NikkiSarah/Courses-Projects-Current.git",
+        "commit": "8e972bce339bd570d05bfca15738c1717d39860a"
+    },
+    "email": "81358254+NikkiSarah@users.noreply.github.com",
+    "root": "C:/Users/nikki.fitzherbert/Documents/GitHub/Courses-Projects-Current",
+    "host": "nf-dev-windows-",
+    "username": "nikki.fitzherbert",
+    "executable": "C:\\ProgramData\\miniconda3\\envs\\handsonllms-env\\python.exe",
+    "cpu_count": 4,
+    "cpu_count_logical": 8,
+    "cpu_freq": {
+        "current": 2594.0,
+        "min": 0.0,
+        "max": 2594.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 2594.0,
+            "min": 0.0,
+            "max": 2594.0
+        }
+    ],
+    "disk": {},
+    "memory": {
+        "total": 31.998905181884766
+    }
+}
