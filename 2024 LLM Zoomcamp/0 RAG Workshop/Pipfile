@@ -10,6 +10,7 @@ openai = "*"
 elasticsearch = "*"
 python-dotenv = "*"
 cohere = "*"
+streamlit = "*"
 
 [dev-packages]
 

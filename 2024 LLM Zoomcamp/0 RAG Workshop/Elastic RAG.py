@@ -254,5 +254,3 @@ def qa_bot(user_question):
 qa_bot("I'm getting invalid reference format: repository name must be lowercase")
 qa_bot("I can't connect to postgres port 5432, my password doesn't work")
 qa_bot("how can I run kafka?")
-
-
