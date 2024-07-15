@@ -1,3 +1,4 @@
+import os
 from cohere.client import Client
 from elasticsearch import Elasticsearch
 import streamlit as st
@@ -7,7 +8,7 @@ from dataprep import load_and_index_data
 load_and_index_data('documents.json')
 
 
-# co_api_key = ''
+# api_key = os.environ['CO_API_KEY']
 # co_client = Client(co_api_key)
 co_client = Client()
 

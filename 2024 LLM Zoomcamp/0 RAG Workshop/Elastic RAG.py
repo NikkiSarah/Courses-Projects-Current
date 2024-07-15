@@ -135,8 +135,9 @@ for doc in response:
 # %% Communicate with an Open-Source LLM
 from cohere.client import Client
 
-co_api_key = ''
-co_client = Client(co_api_key)
+# co_api_key = os.environ['CO_API_KEY']
+# co_client = Client(co_api_key)
+co_client = Client()
 
 response = co_client.chat(
     message="How do I get better at data science?",
