@@ -1,10 +1,15 @@
 from cohere.client import Client
 from elasticsearch import Elasticsearch
 import streamlit as st
+from dataprep import load_and_index_data
 
 
-co_api_key = ''
-co_client = Client(co_api_key)
+load_and_index_data('documents.json')
+
+
+# co_api_key = ''
+# co_client = Client(co_api_key)
+co_client = Client()
 
 es = Elasticsearch("http://localhost:9200")
 index_name = "course-questions"
