@@ -28,3 +28,5 @@ cd "2024 LLM Zoomcamp"/"0 RAG Workshop"
 wget https://github.com/alexeygrigorev/llm-rag-workshop/raw/main/notebooks/documents.json
 head documents.json
 
+streamlit run app.py
+
