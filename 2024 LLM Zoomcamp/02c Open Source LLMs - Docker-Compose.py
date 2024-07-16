@@ -50,11 +50,8 @@ for course in documents_raw:
 
 
 # %% index the documents
-try:
-    for doc in tqdm(documents):
-        es.index(index=index_name, document=doc)
-except:
-    pass
+for doc in tqdm(documents):
+    es.index(index=index_name, body=doc)
 
 
 # %% define a search function
