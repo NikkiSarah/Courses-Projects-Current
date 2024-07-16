@@ -30,11 +30,8 @@ index_settings = {
     }
 }
 
-try:
-    index_name = "course-questions"
-    response = es.indices.create(index=index_name, body=index_settings)
-except:
-    pass
+index_name = "course-questions"
+response = es.indices.create(index=index_name, body=index_settings)
 
 
 # %% load and parse the data

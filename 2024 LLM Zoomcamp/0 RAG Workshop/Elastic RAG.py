@@ -27,6 +27,7 @@ from tqdm.auto import tqdm
 
 # check it's working
 es = Elasticsearch("http://localhost:9200")
+
 print(es.info())
 
 # create an index (this is like a table in a relational db)
